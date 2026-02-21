@@ -1,0 +1,7 @@
+{
+    "appinfo": "What app sent the notification",
+    "title": "title",
+    "text": "text",
+    "bigText": "If we have a log text",
+    "categpry": "email/msg"
+}

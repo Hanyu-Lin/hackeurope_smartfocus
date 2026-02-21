@@ -1,87 +1,69 @@
 package locked.`in`.service
 
-import locked.`in`.data.local.entity.NotificationEntity
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
+import locked.`in`.data.local.entity.NotificationRecordEntity
+import locked.`in`.domain.model.NotificationOutcome
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class DigestGenerator @Inject constructor() {
 
-    fun generate(notifications: List<NotificationEntity>): String {
-        if (notifications.isEmpty()) {
-            return "No notifications during this session"
-        }
+    fun generate(records: List<NotificationRecordEntity>): String {
+        if (records.isEmpty()) return "No notifications during this session"
 
-        val timeFormat = SimpleDateFormat("h:mm a", Locale.getDefault())
-        val totalCount = notifications.size
-        val blockedCount = notifications.count { !it.isAllowed }
-        val allowedCount = notifications.count { it.isAllowed }
-        val appGroups = notifications.groupBy { it.appName }
-        val distinctApps = appGroups.size
-
-        // Sort groups: blocked-heavy first, then by total count
-        val sortedGroups = appGroups.entries.sortedWith(
-            compareByDescending<Map.Entry<String, List<NotificationEntity>>> { entry ->
-                entry.value.count { !it.isAllowed }
-            }.thenByDescending { it.value.size }
-        )
+        val suppressed = records.filter { it.outcome == NotificationOutcome.SUPPRESSED.name }
+        val bundled = records.filter { it.outcome == NotificationOutcome.BUNDLED.name }
 
         val sb = StringBuilder()
         sb.appendLine("Focus Session Summary")
         sb.appendLine("---------------------")
-        sb.appendLine("$totalCount notifications from $distinctApps apps ($blockedCount blocked, $allowedCount allowed)")
+        sb.appendLine("${records.size} notifications total")
+        sb.appendLine("${suppressed.size} suppressed, ${bundled.size} bundled")
 
-        for ((appName, appNotifications) in sortedGroups) {
-            val appBlocked = appNotifications.count { !it.isAllowed }
-            val appAllowed = appNotifications.count { it.isAllowed }
-            val sorted = appNotifications.sortedBy { it.timestamp }
-
+        // Group bundled by bundleId
+        val bundleGroups = bundled.groupBy { it.bundleId ?: "unknown" }
+        if (bundleGroups.isNotEmpty()) {
             sb.appendLine()
-            sb.append("$appName (")
-            val parts = mutableListOf<String>()
-            if (appBlocked > 0) parts.add("$appBlocked blocked")
-            if (appAllowed > 0) parts.add("$appAllowed allowed")
-            sb.append(parts.joinToString(", "))
-            sb.appendLine("):")
-
-            val showCount = minOf(sorted.size, if (sorted.size <= 3) 3 else 2)
-            for (i in 0 until showCount) {
-                val n = sorted[i]
-                val displayName = formatNotificationLine(n)
-                val time = timeFormat.format(Date(n.timestamp))
-                sb.appendLine("  - $displayName ($time)")
+            sb.appendLine("Bundled:")
+            for ((bundleId, members) in bundleGroups) {
+                val apps = members.map { it.appLabel }.distinct()
+                val label = if (apps.size > 1) {
+                    apps.joinToString(" \u00b7 ") + " \u00b7 ${members.size} notifications"
+                } else {
+                    "${apps.first()} \u00b7 ${members.size} notifications"
+                }
+                sb.appendLine("  $label")
+                val preview = members.maxByOrNull { it.timestamp }
+                if (preview != null) {
+                    sb.appendLine("    Latest: ${preview.title} - ${preview.text.take(80)}")
+                }
             }
-            val remaining = sorted.size - showCount
-            if (remaining > 0) {
-                sb.appendLine("  - and $remaining other notifications")
+        }
+
+        // Suppressed individually
+        val highPriority = suppressed.filter { (it.priorityScore ?: 0f) >= 5f }
+        val lowPriority = suppressed.filter { (it.priorityScore ?: 0f) < 5f }
+
+        if (highPriority.isNotEmpty()) {
+            sb.appendLine()
+            sb.appendLine("Might be important:")
+            for (r in highPriority.sortedByDescending { it.priorityScore }.take(5)) {
+                sb.appendLine("  ${r.appLabel}: ${r.title}")
+            }
+        }
+
+        if (lowPriority.isNotEmpty()) {
+            sb.appendLine()
+            if (lowPriority.size <= 3) {
+                sb.appendLine("Low priority:")
+                for (r in lowPriority) {
+                    sb.appendLine("  ${r.appLabel}: ${r.title}")
+                }
+            } else {
+                sb.appendLine("and ${lowPriority.size} other low-priority notifications")
             }
         }
 
         return sb.toString().trimEnd()
-    }
-
-    private fun formatNotificationLine(n: NotificationEntity): String {
-        val sender = n.senderName
-        val conversation = n.conversationName
-        val category = n.notificationCategory
-
-        val prefix = when {
-            sender != null && conversation != null -> "$sender in $conversation"
-            sender != null -> sender
-            else -> n.title.take(40).let { if (n.title.length > 40) "$it..." else it }
-        }
-
-        val suffix = when (category) {
-            "call" -> " [call]"
-            "missed_call" -> " [missed call]"
-            "email" -> " [email]"
-            else -> ""
-        }
-
-        val result = prefix.take(50).let { if (prefix.length > 50) "$it..." else it }
-        return "$result$suffix"
     }
 }

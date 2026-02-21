@@ -1,100 +1,52 @@
 package locked.`in`.service
 
-import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import androidx.core.app.NotificationCompat
+import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
-import locked.`in`.MainActivity
-import locked.`in`.R
-import locked.`in`.data.local.entity.FocusSessionEntity
-import locked.`in`.data.repository.NotificationRepository
-import locked.`in`.data.repository.SessionRepository
+import locked.`in`.data.repository.BundleRepository
+import locked.`in`.data.repository.FocusModeRepository
 import locked.`in`.data.repository.SettingsRepository
-import java.io.File
-import java.util.UUID
+import java.time.LocalDateTime
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FocusModeController @Inject constructor(
-    @param:ApplicationContext private val context: Context,
+    @ApplicationContext private val context: Context,
+    private val focusModeRepository: FocusModeRepository,
     private val settingsRepository: SettingsRepository,
-    private val notificationRepository: NotificationRepository,
-    private val sessionRepository: SessionRepository,
+    private val bundleRepository: BundleRepository,
     private val digestGenerator: DigestGenerator,
-    private val bundleNotificationPoster: BundleNotificationPoster
+    private val bundleNotificationPoster: BundleNotificationPosterInterface
 ) {
+
     companion object {
-        const val EXTRA_SESSION_ID = "SESSION_ID"
-        private const val DIGEST_NOTIFICATION_ID = 9001
+        private const val TAG = "FocusModeController"
     }
 
-    suspend fun toggle() {
-        val isEnabled = settingsRepository.focusModeEnabled.first()
-        if (isEnabled) {
-            stop()
-        } else {
-            start()
-        }
-    }
-
-    suspend fun start() {
-        val existingSessionId = settingsRepository.currentFocusSessionId.first()
-        val sessionId = existingSessionId ?: UUID.randomUUID().toString()
-
-        settingsRepository.setFocusModeEnabled(true)
-        settingsRepository.setCurrentFocusSessionId(sessionId)
+    suspend fun activate(modeId: String) {
+        focusModeRepository.activate(modeId)
+        settingsRepository.setActiveFocusModeId(modeId)
         settingsRepository.setFocusSessionStartTime(System.currentTimeMillis())
 
+        val mode = focusModeRepository.getById(modeId)
         val intent = Intent(context, FocusModeService::class.java).apply {
             action = FocusModeService.ACTION_START
+            putExtra(FocusModeService.EXTRA_MODE_NAME, mode?.name ?: "Focus")
         }
         context.startForegroundService(intent)
     }
 
-    suspend fun stop() {
-        val currentSessionId = settingsRepository.currentFocusSessionId.first()
-        val startTime = settingsRepository.focusSessionStartTime.first()
-        val endTime = System.currentTimeMillis()
+    suspend fun deactivate() {
+        val startTime = settingsRepository.focusSessionStartTime
+        bundleNotificationPoster.clearAll()
+        bundleRepository.clearAllBundles()
 
-        if (currentSessionId != null) {
-            // Query notifications for this session and generate digest
-            val notifications = notificationRepository.getByFocusSession(currentSessionId).first()
-            val digest = digestGenerator.generate(notifications)
-            val allowedCount = notifications.count { it.isAllowed }
-            val suppressedCount = notifications.count { !it.isAllowed }
-
-            // Persist the session
-            sessionRepository.insert(
-                FocusSessionEntity(
-                    id = currentSessionId,
-                    startTime = if (startTime > 0) startTime else endTime,
-                    endTime = endTime,
-                    allowedCount = allowedCount,
-                    suppressedCount = suppressedCount,
-                    digestText = digest
-                )
-            )
-
-            // Clear bundle notifications before posting digest
-            bundleNotificationPoster.clearAll()
-
-            // Post digest notification if there were any notifications
-            if (notifications.isNotEmpty()) {
-                postDigestNotification(currentSessionId, digest, suppressedCount, allowedCount)
-            }
-
-            settingsRepository.setLastFocusSessionId(currentSessionId)
-        }
-
-        // Clear raw notification log after session ends
-        File(context.filesDir, "notifications_raw.jsonl").delete()
-
-        settingsRepository.setFocusModeEnabled(false)
-        settingsRepository.setCurrentFocusSessionId(null)
+        focusModeRepository.deactivate()
+        settingsRepository.setActiveFocusModeId(null)
+        settingsRepository.setFocusSessionStartTime(null)
 
         val intent = Intent(context, FocusModeService::class.java).apply {
             action = FocusModeService.ACTION_STOP
@@ -102,34 +54,93 @@ class FocusModeController @Inject constructor(
         context.startService(intent)
     }
 
-    private fun postDigestNotification(
-        sessionId: String,
-        digest: String,
-        suppressedCount: Int,
-        allowedCount: Int
-    ) {
-        val intent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra(EXTRA_SESSION_ID, sessionId)
+    suspend fun toggle(modeId: String) {
+        val active = focusModeRepository.getActive()
+        if (active != null && active.id == modeId) {
+            deactivate()
+        } else {
+            if (active != null) deactivate()
+            activate(modeId)
         }
-        val pendingIntent = PendingIntent.getActivity(
-            context,
-            sessionId.hashCode(),
-            intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
+        settingsRepository.setScheduleOverrideModeId(modeId)
+    }
 
-        val total = suppressedCount + allowedCount
-        val notification = NotificationCompat.Builder(context, NotificationChannels.DIGEST_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("Focus Session Complete")
-            .setContentText("$total notifications ($suppressedCount blocked, $allowedCount allowed)")
-            .setStyle(NotificationCompat.BigTextStyle().bigText(digest))
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .build()
+    /**
+     * Full schedule evaluation — can both activate and deactivate.
+     * Called by [ScheduleCheckerWorker] periodically and by the HomeViewModel
+     * on init so opening the app immediately syncs schedule state.
+     */
+    suspend fun evaluateSchedule() {
+        val now = LocalDateTime.now()
+        val currentDay = now.dayOfWeek
+        val currentMinute = now.hour * 60 + now.minute
 
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        manager.notify(DIGEST_NOTIFICATION_ID, notification)
+        val scheduledModes = focusModeRepository.getScheduledModes()
+        val targetMode = scheduledModes.firstOrNull { mode ->
+            currentDay in mode.scheduleDays && isInWindow(currentMinute, mode.scheduleStartMinute, mode.scheduleEndMinute)
+        }
+
+        val activeMode = focusModeRepository.getActive()
+        val overrideModeId = settingsRepository.scheduleOverrideModeId.first()
+
+        if (overrideModeId != null) {
+            val scheduleSaysActive = targetMode != null && targetMode.id == overrideModeId
+            val isCurrentlyActive = activeMode != null && activeMode.id == overrideModeId
+
+            if (scheduleSaysActive == isCurrentlyActive) {
+                // Schedule agrees with current state — override served its purpose, clear it.
+                settingsRepository.setScheduleOverrideModeId(null)
+                Log.d(TAG, "Override cleared for $overrideModeId (converged)")
+                // State is already correct, nothing to do.
+            } else {
+                // Schedule wants the opposite of what the user chose. Respect the user.
+                Log.d(TAG, "Respecting manual override for $overrideModeId")
+            }
+            return
+        }
+
+        // No override — follow the schedule.
+        if (targetMode != null) {
+            if (activeMode == null || activeMode.id != targetMode.id) {
+                Log.d(TAG, "Activating scheduled mode: ${targetMode.name}")
+                activate(targetMode.id)
+            }
+        } else {
+            if (activeMode != null && activeMode.scheduleEnabled) {
+                Log.d(TAG, "Deactivating scheduled mode: ${activeMode.name}")
+                deactivate()
+            }
+        }
+    }
+
+    /**
+     * Activation-only schedule check — called by the UI when schedule settings
+     * are edited. Will activate a mode if the new schedule matches now, but will
+     * never deactivate one (avoids jarring UX while the user is editing).
+     */
+    suspend fun evaluateScheduleForActivation() {
+        val now = LocalDateTime.now()
+        val currentDay = now.dayOfWeek
+        val currentMinute = now.hour * 60 + now.minute
+
+        val scheduledModes = focusModeRepository.getScheduledModes()
+        val targetMode = scheduledModes.firstOrNull { mode ->
+            currentDay in mode.scheduleDays && isInWindow(currentMinute, mode.scheduleStartMinute, mode.scheduleEndMinute)
+        }
+
+        val activeMode = focusModeRepository.getActive()
+        if (targetMode != null && (activeMode == null || activeMode.id != targetMode.id)) {
+            Log.d(TAG, "Activating scheduled mode from settings change: ${targetMode.name}")
+            activate(targetMode.id)
+        }
+    }
+
+    fun isInWindow(current: Int, start: Int, end: Int): Boolean {
+        return if (start <= end) {
+            current in start until end
+        } else {
+            // Wraps midnight (e.g., 22:00 - 06:00)
+            current >= start || current < end
+        }
     }
 }

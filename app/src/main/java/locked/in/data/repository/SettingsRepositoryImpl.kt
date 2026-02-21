@@ -14,50 +14,47 @@ class SettingsRepositoryImpl @Inject constructor(
     private val dataStore: DataStore<Preferences>
 ) : SettingsRepository {
 
-    override val focusModeEnabled: Flow<Boolean> =
-        dataStore.data.map { it[PreferenceKeys.FOCUS_MODE_ENABLED] ?: false }
+    override val activeFocusModeId: Flow<String?> =
+        dataStore.data.map { it[PreferenceKeys.ACTIVE_FOCUS_MODE_ID] }
 
-    override val currentFocusSessionId: Flow<String?> =
-        dataStore.data.map { it[PreferenceKeys.CURRENT_FOCUS_SESSION_ID] }
-
-    override val lastFocusSessionId: Flow<String?> =
-        dataStore.data.map { it[PreferenceKeys.LAST_FOCUS_SESSION_ID] }
-
-    override val listenerEnabledCache: Flow<Boolean> =
+    override val listenerEnabled: Flow<Boolean> =
         dataStore.data.map { it[PreferenceKeys.LISTENER_ENABLED_CACHE] ?: false }
 
-    override val focusSessionStartTime: Flow<Long> =
-        dataStore.data.map { it[PreferenceKeys.FOCUS_SESSION_START_TIME] ?: 0L }
+    override val retentionDays: Flow<Int> =
+        dataStore.data.map { it[PreferenceKeys.RETENTION_DAYS] ?: 30 }
 
-    override suspend fun setFocusModeEnabled(enabled: Boolean) {
-        dataStore.edit { it[PreferenceKeys.FOCUS_MODE_ENABLED] = enabled }
-    }
+    override val focusSessionStartTime: Flow<Long?> =
+        dataStore.data.map { it[PreferenceKeys.FOCUS_SESSION_START_TIME] }
 
-    override suspend fun setCurrentFocusSessionId(sessionId: String?) {
+    override suspend fun setActiveFocusModeId(id: String?) {
         dataStore.edit { prefs ->
-            if (sessionId != null) {
-                prefs[PreferenceKeys.CURRENT_FOCUS_SESSION_ID] = sessionId
-            } else {
-                prefs.remove(PreferenceKeys.CURRENT_FOCUS_SESSION_ID)
-            }
+            if (id != null) prefs[PreferenceKeys.ACTIVE_FOCUS_MODE_ID] = id
+            else prefs.remove(PreferenceKeys.ACTIVE_FOCUS_MODE_ID)
         }
     }
 
-    override suspend fun setLastFocusSessionId(sessionId: String?) {
-        dataStore.edit { prefs ->
-            if (sessionId != null) {
-                prefs[PreferenceKeys.LAST_FOCUS_SESSION_ID] = sessionId
-            } else {
-                prefs.remove(PreferenceKeys.LAST_FOCUS_SESSION_ID)
-            }
-        }
-    }
-
-    override suspend fun setListenerEnabledCache(enabled: Boolean) {
+    override suspend fun setListenerEnabled(enabled: Boolean) {
         dataStore.edit { it[PreferenceKeys.LISTENER_ENABLED_CACHE] = enabled }
     }
 
-    override suspend fun setFocusSessionStartTime(time: Long) {
-        dataStore.edit { it[PreferenceKeys.FOCUS_SESSION_START_TIME] = time }
+    override suspend fun setRetentionDays(days: Int) {
+        dataStore.edit { it[PreferenceKeys.RETENTION_DAYS] = days }
+    }
+
+    override suspend fun setFocusSessionStartTime(time: Long?) {
+        dataStore.edit { prefs ->
+            if (time != null) prefs[PreferenceKeys.FOCUS_SESSION_START_TIME] = time
+            else prefs.remove(PreferenceKeys.FOCUS_SESSION_START_TIME)
+        }
+    }
+
+    override val scheduleOverrideModeId: Flow<String?> =
+        dataStore.data.map { it[PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID] }
+
+    override suspend fun setScheduleOverrideModeId(id: String?) {
+        dataStore.edit { prefs ->
+            if (id != null) prefs[PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID] = id
+            else prefs.remove(PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID)
+        }
     }
 }

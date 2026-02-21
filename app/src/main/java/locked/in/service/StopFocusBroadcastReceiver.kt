@@ -28,7 +28,7 @@ class StopFocusBroadcastReceiver : BroadcastReceiver() {
         val pendingResult = goAsync()
         CoroutineScope(Dispatchers.IO).launch {
             try {
-                controller.stop()
+                controller.deactivate()
             } finally {
                 pendingResult.finish()
             }

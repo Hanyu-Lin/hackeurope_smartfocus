@@ -1,84 +1,74 @@
 package locked.`in`.ui.navigation
 
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
-import locked.`in`.ui.screen.detail.DetailScreen
-import locked.`in`.ui.screen.home.HomeScreen
-import locked.`in`.ui.screen.search.SearchScreen
-import locked.`in`.ui.screen.sessions.SessionDetailScreen
-import locked.`in`.ui.screen.sessions.SessionHistoryScreen
+import locked.`in`.ui.screens.digest.DigestScreen
+import locked.`in`.ui.screens.focusmodedetail.FocusModeDetailScreen
+import locked.`in`.ui.screens.home.HomeScreen
+import locked.`in`.ui.screens.notificationdetail.NotificationDetailScreen
+import locked.`in`.ui.screens.onboarding.OnboardingScreen
+import locked.`in`.ui.screens.search.SearchScreen
+import locked.`in`.ui.screens.settings.SettingsScreen
 
 @Composable
 fun AppNavigation(
-    deepLinkSessionId: String? = null,
-    viewModel: AppNavigationViewModel = hiltViewModel()
+    startOnboarding: Boolean = false
 ) {
-    val startDestination by viewModel.startDestination.collectAsState()
-
-    if (startDestination == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator()
-        }
-        return
-    }
-
     val navController = rememberNavController()
-
-    // Handle deep link from digest notification
-    LaunchedEffect(deepLinkSessionId) {
-        if (deepLinkSessionId != null) {
-            navController.navigate(SessionDetailRoute(deepLinkSessionId))
-        }
-    }
+    val startDestination: Any = if (startOnboarding) OnboardingRoute else HomeRoute
 
     NavHost(
         navController = navController,
-        startDestination = startDestination!!
+        startDestination = startDestination
     ) {
         composable<HomeRoute> {
             HomeScreen(
                 onNavigateToSearch = { navController.navigate(SearchRoute) },
-                onNavigateToSessions = { navController.navigate(SessionHistoryRoute) },
-                onNavigateToDetail = { id -> navController.navigate(DetailRoute(id)) }
+                onNavigateToFocusModeDetail = { modeId ->
+                    navController.navigate(FocusModeDetailRoute(modeId))
+                },
+                onNavigateToDigest = { navController.navigate(DigestRoute) },
+                onNavigateToSettings = { navController.navigate(SettingsRoute) }
             )
         }
-        composable<SessionHistoryRoute> {
-            SessionHistoryScreen(
-                onNavigateBack = { navController.popBackStack() },
-                onNavigateToDetail = { sessionId ->
-                    navController.navigate(SessionDetailRoute(sessionId))
-                }
+        composable<FocusModeDetailRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<FocusModeDetailRoute>()
+            FocusModeDetailScreen(
+                onNavigateBack = { navController.popBackStack() }
             )
         }
-        composable<SessionDetailRoute> { backStackEntry ->
-            val route = backStackEntry.toRoute<SessionDetailRoute>()
-            SessionDetailScreen(
+        composable<DigestRoute> {
+            DigestScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToNotificationDetail = { id -> navController.navigate(DetailRoute(id)) }
+                onNavigateToDetail = { id -> navController.navigate(NotificationDetailRoute(id)) }
             )
         }
         composable<SearchRoute> {
             SearchScreen(
                 onNavigateBack = { navController.popBackStack() },
-                onNavigateToDetail = { id -> navController.navigate(DetailRoute(id)) }
+                onNavigateToDetail = { id -> navController.navigate(NotificationDetailRoute(id)) }
             )
         }
-        composable<DetailRoute> { backStackEntry ->
-            val route = backStackEntry.toRoute<DetailRoute>()
-            DetailScreen(
-                notificationId = route.notificationId,
+        composable<NotificationDetailRoute> { backStackEntry ->
+            val route = backStackEntry.toRoute<NotificationDetailRoute>()
+            NotificationDetailScreen(
+                onNavigateBack = { navController.popBackStack() }
+            )
+        }
+        composable<OnboardingRoute> {
+            OnboardingScreen(
+                onComplete = {
+                    navController.navigate(HomeRoute) {
+                        popUpTo(OnboardingRoute) { inclusive = true }
+                    }
+                }
+            )
+        }
+        composable<SettingsRoute> {
+            SettingsScreen(
                 onNavigateBack = { navController.popBackStack() }
             )
         }

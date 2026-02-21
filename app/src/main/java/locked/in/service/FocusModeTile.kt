@@ -12,6 +12,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import locked.`in`.data.repository.FocusModeRepository
 import locked.`in`.data.repository.SettingsRepository
 
 class FocusModeTile : TileService() {
@@ -20,6 +21,7 @@ class FocusModeTile : TileService() {
     @InstallIn(SingletonComponent::class)
     interface TileEntryPoint {
         fun settingsRepository(): SettingsRepository
+        fun focusModeRepository(): FocusModeRepository
         fun focusModeController(): FocusModeController
     }
 
@@ -29,23 +31,31 @@ class FocusModeTile : TileService() {
         EntryPointAccessors.fromApplication(applicationContext, TileEntryPoint::class.java)
     }
 
-    private val settingsRepository by lazy { entryPoint.settingsRepository() }
-    private val controller by lazy { entryPoint.focusModeController() }
-
     override fun onStartListening() {
         super.onStartListening()
         tileScope.launch {
-            val isActive = settingsRepository.focusModeEnabled.first()
-            updateTileState(isActive)
+            val activeModeId = entryPoint.settingsRepository().activeFocusModeId.first()
+            updateTileState(activeModeId != null)
         }
     }
 
     override fun onClick() {
         super.onClick()
         tileScope.launch {
-            val wasFocused = settingsRepository.focusModeEnabled.first()
-            controller.toggle()
-            updateTileState(!wasFocused)
+            val activeModeId = entryPoint.settingsRepository().activeFocusModeId.first()
+            val controller = entryPoint.focusModeController()
+            if (activeModeId != null) {
+                controller.deactivate()
+                updateTileState(false)
+            } else {
+                // Activate first available mode
+                val modes = entryPoint.focusModeRepository().observeAll().first()
+                val firstMode = modes.firstOrNull()
+                if (firstMode != null) {
+                    controller.activate(firstMode.id)
+                    updateTileState(true)
+                }
+            }
         }
     }
 

@@ -1,128 +1,186 @@
 package locked.`in`.service
 
-import android.util.Log
 import android.app.NotificationManager
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
+import android.content.pm.PackageManager
+import android.graphics.drawable.BitmapDrawable
 import androidx.core.app.NotificationCompat
+import androidx.core.graphics.drawable.toBitmap
 import dagger.hilt.android.qualifiers.ApplicationContext
-import locked.`in`.MainActivity
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import locked.`in`.R
-import locked.`in`.data.local.entity.NotificationEntity
+import locked.`in`.data.local.entity.NotificationBundleEntity
+import locked.`in`.data.repository.BundleRepository
+import locked.`in`.domain.model.ParsedNotification
 import javax.inject.Inject
 import javax.inject.Singleton
 
+interface BundleNotificationPosterInterface {
+    suspend fun handleBundle(bundleId: String, parsed: ParsedNotification, recordId: String)
+    fun clearAll()
+}
+
 @Singleton
-class BundleNotificationPoster @Inject constructor(
-    @param:ApplicationContext private val context: Context
-) {
-    companion object {
-        private const val TAG = "BundlePoster"
-        private const val CHILD_ID_BASE = 10_000
-        private const val SUMMARY_ID_BASE = 50_000
+class BundleNotificationPosterImpl @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val bundleRepository: BundleRepository,
+    private val parsedCache: ParsedNotificationCache
+) : BundleNotificationPosterInterface {
+
+    private val notificationManager by lazy {
+        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     }
 
-    private val activeBundles = mutableMapOf<String, MutableSet<Long>>()
+    private var nextNotificationId = 20_000
 
-    fun postOrUpdate(
-        bundleId: String,
-        newEntity: NotificationEntity,
-        allBundleEntities: List<NotificationEntity>
-    ) {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    override suspend fun handleBundle(bundleId: String, parsed: ParsedNotification, recordId: String) {
+        val existing = bundleRepository.getBundleByBundleId(bundleId)
+        val groupKey = "bundle_$bundleId"
 
-        Log.d(TAG, "postOrUpdate: bundleId=$bundleId, entityId=${newEntity.id}, members=${allBundleEntities.size}")
-
-        activeBundles.getOrPut(bundleId) { mutableSetOf() }.add(newEntity.id)
-
-        // Post child notification
-        val childId = CHILD_ID_BASE + newEntity.id.toInt()
-        val childIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-            putExtra("notification_id", newEntity.id)
-        }
-        val childPendingIntent = PendingIntent.getActivity(
-            context,
-            childId,
-            childIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
-
-        val childNotification = NotificationCompat.Builder(context, NotificationChannels.BUNDLE_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle(newEntity.appName)
-            .setContentText(newEntity.title)
-            .setStyle(
-                NotificationCompat.BigTextStyle()
-                    .setBigContentTitle(newEntity.title)
-                    .bigText(newEntity.body)
+        if (existing == null) {
+            // First notification in this bundle — post as solo child
+            val postedId = nextNotificationId++
+            bundleRepository.insertBundle(
+                NotificationBundleEntity(
+                    bundleId = bundleId,
+                    bundleIndex = 0,
+                    packageName = parsed.packageName,
+                    appLabel = parsed.appLabel,
+                    notificationIds = Json.encodeToString(listOf(recordId)),
+                    soloSbnKey = parsed.originalKey,
+                    postedNotificationId = postedId,
+                    createdAt = parsed.timestamp,
+                    updatedAt = parsed.timestamp
+                )
             )
-            .setGroup(bundleId)
-            .setContentIntent(childPendingIntent)
-            .setAutoCancel(true)
-            .setWhen(newEntity.timestamp)
-            .build()
-
-        manager.notify(childId, childNotification)
-
-        // Post/update group summary
-        val summaryId = SUMMARY_ID_BASE + bundleId.hashCode()
-        val count = allBundleEntities.size
-        val categoryLabel = deriveCategoryLabel(bundleId)
-
-        val inboxStyle = NotificationCompat.InboxStyle()
-            .setBigContentTitle("$categoryLabel ($count)")
-
-        allBundleEntities.takeLast(5).reversed().forEach { entity ->
-            inboxStyle.addLine("${entity.appName}: ${entity.body}".take(80))
+            // Post solo notification preserving original content
+            val notification = buildChildNotification(parsed, groupKey)
+            notificationManager.notify(postedId, notification)
+            return
         }
 
-        if (count > 5) {
-            val appCount = allBundleEntities.map { it.appPackage }.distinct().size
-            inboxStyle.setSummaryText("+${count - 5} more from $appCount apps")
-        }
-
-        val summaryIntent = Intent(context, MainActivity::class.java).apply {
-            flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
-        }
-        val summaryPendingIntent = PendingIntent.getActivity(
-            context,
-            summaryId,
-            summaryIntent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        val existingIds: List<String> = Json.decodeFromString(existing.notificationIds)
+        val updatedIds = existingIds + recordId
+        val updatedBundle = existing.copy(
+            notificationIds = Json.encodeToString(updatedIds),
+            updatedAt = parsed.timestamp
         )
+        bundleRepository.updateBundle(updatedBundle)
 
-        val summaryNotification = NotificationCompat.Builder(context, NotificationChannels.BUNDLE_CHANNEL_ID)
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("$categoryLabel ($count)")
-            .setContentText("$count notifications")
-            .setStyle(inboxStyle)
-            .setGroup(bundleId)
-            .setGroupSummary(true)
-            .setContentIntent(summaryPendingIntent)
-            .setAutoCancel(true)
-            .build()
+        if (existingIds.size == 1) {
+            // Transition solo → grouped: cancel solo, re-post first as child + new child + summary
+            notificationManager.cancel(existing.postedNotificationId)
 
-        manager.notify(summaryId, summaryNotification)
-        Log.d(TAG, "Posted child=$childId, summary=$summaryId for bundle=$bundleId")
-    }
-
-    private fun deriveCategoryLabel(bundleId: String): String {
-        val raw = bundleId.removePrefix("bundle_")
-        return raw.replaceFirstChar { it.uppercase() } + "s"
-    }
-
-    fun clearAll() {
-        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        for ((bundleId, entityIds) in activeBundles) {
-            for (entityId in entityIds) {
-                manager.cancel(CHILD_ID_BASE + entityId.toInt())
+            // Re-post first notification as grouped child
+            val firstParsed = parsedCache.get(existing.soloSbnKey)
+            if (firstParsed != null) {
+                val firstChildId = nextNotificationId++
+                val firstChild = buildChildNotification(firstParsed, groupKey)
+                notificationManager.notify(firstChildId, firstChild)
             }
-            manager.cancel(SUMMARY_ID_BASE + bundleId.hashCode())
+
+            // Post new child
+            val newChildId = nextNotificationId++
+            val newChild = buildChildNotification(parsed, groupKey)
+            notificationManager.notify(newChildId, newChild)
+
+            // Post group summary
+            val summaryId = existing.postedNotificationId // reuse the bundle's id for summary
+            val members = buildMemberList(existing.soloSbnKey, parsed)
+            val summary = buildSummaryNotification(updatedBundle, updatedIds.size, groupKey, members)
+            notificationManager.notify(summaryId, summary)
+        } else {
+            // Third+: post new child, update summary
+            val newChildId = nextNotificationId++
+            val newChild = buildChildNotification(parsed, groupKey)
+            notificationManager.notify(newChildId, newChild)
+
+            // Update summary in-place
+            val summaryId = existing.postedNotificationId
+            val members = listOf("${parsed.title}: ${parsed.text.take(60)}")
+            val summary = buildSummaryNotification(updatedBundle, updatedIds.size, groupKey, members)
+            notificationManager.notify(summaryId, summary)
+        }
+    }
+
+    private fun buildChildNotification(
+        parsed: ParsedNotification,
+        groupKey: String
+    ): android.app.Notification {
+        val builder = NotificationCompat.Builder(context, NotificationChannels.BUNDLE_CHANNEL_ID)
+            .setContentTitle(parsed.title)
+            .setContentText(parsed.text)
+            .setSmallIcon(categoryIcon(parsed.category))
+            .setGroup(groupKey)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+
+        parsed.subText?.let { builder.setSubText(it) }
+        parsed.originalColor?.let { builder.setColor(it) }
+        parsed.originalContentIntent?.let { builder.setContentIntent(it) }
+        parsed.originalSortKey?.let { builder.setSortKey(it) }
+
+        // Try to set the app icon as large icon
+        try {
+            val appIcon = context.packageManager.getApplicationIcon(parsed.packageName)
+            val bitmap = if (appIcon is BitmapDrawable) {
+                appIcon.bitmap
+            } else {
+                appIcon.toBitmap(48, 48)
+            }
+            builder.setLargeIcon(bitmap)
+        } catch (_: PackageManager.NameNotFoundException) {
+            // No large icon if app not found
         }
 
-        activeBundles.clear()
+        return builder.build()
+    }
+
+    private fun buildSummaryNotification(
+        bundle: NotificationBundleEntity,
+        count: Int,
+        groupKey: String,
+        memberPreviewLines: List<String>
+    ): android.app.Notification {
+        val style = NotificationCompat.InboxStyle()
+            .setBigContentTitle("${bundle.appLabel} \u00b7 $count notifications")
+
+        for (line in memberPreviewLines.takeLast(5)) {
+            style.addLine(line)
+        }
+
+        return NotificationCompat.Builder(context, NotificationChannels.BUNDLE_CHANNEL_ID)
+            .setSmallIcon(R.drawable.ic_notif_default)
+            .setContentTitle("${bundle.appLabel} \u00b7 $count notifications")
+            .setContentText("$count bundled notifications")
+            .setStyle(style)
+            .setGroup(groupKey)
+            .setGroupSummary(true)
+            .setOnlyAlertOnce(true)
+            .setAutoCancel(false)
+            .build()
+    }
+
+    private fun buildMemberList(firstKey: String, newParsed: ParsedNotification): List<String> {
+        val lines = mutableListOf<String>()
+        val firstParsed = parsedCache.get(firstKey)
+        if (firstParsed != null) {
+            lines.add("${firstParsed.title}: ${firstParsed.text.take(60)}")
+        }
+        lines.add("${newParsed.title}: ${newParsed.text.take(60)}")
+        return lines
+    }
+
+    private fun categoryIcon(category: String): Int = when (category) {
+        "message", "group_message" -> R.drawable.ic_notif_message
+        "email" -> R.drawable.ic_notif_email
+        "call" -> R.drawable.ic_notif_call
+        "social", "mention" -> R.drawable.ic_notif_social
+        else -> R.drawable.ic_notif_default
+    }
+
+    override fun clearAll() {
+        notificationManager.cancelAll()
     }
 }

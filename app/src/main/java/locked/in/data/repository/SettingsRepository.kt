@@ -3,15 +3,16 @@ package locked.`in`.data.repository
 import kotlinx.coroutines.flow.Flow
 
 interface SettingsRepository {
-    val focusModeEnabled: Flow<Boolean>
-    val currentFocusSessionId: Flow<String?>
-    val lastFocusSessionId: Flow<String?>
-    val listenerEnabledCache: Flow<Boolean>
-    val focusSessionStartTime: Flow<Long>
+    val activeFocusModeId: Flow<String?>
+    val listenerEnabled: Flow<Boolean>
+    val retentionDays: Flow<Int>
+    val focusSessionStartTime: Flow<Long?>
 
-    suspend fun setFocusModeEnabled(enabled: Boolean)
-    suspend fun setCurrentFocusSessionId(sessionId: String?)
-    suspend fun setLastFocusSessionId(sessionId: String?)
-    suspend fun setListenerEnabledCache(enabled: Boolean)
-    suspend fun setFocusSessionStartTime(time: Long)
+    suspend fun setActiveFocusModeId(id: String?)
+    suspend fun setListenerEnabled(enabled: Boolean)
+    suspend fun setRetentionDays(days: Int)
+    suspend fun setFocusSessionStartTime(time: Long?)
+
+    val scheduleOverrideModeId: Flow<String?>
+    suspend fun setScheduleOverrideModeId(id: String?)
 }

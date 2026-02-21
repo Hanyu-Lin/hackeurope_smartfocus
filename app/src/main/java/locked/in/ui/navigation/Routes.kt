@@ -2,17 +2,10 @@ package locked.`in`.ui.navigation
 
 import kotlinx.serialization.Serializable
 
-@Serializable
-data object HomeRoute
-
-@Serializable
-data object SessionHistoryRoute
-
-@Serializable
-data class SessionDetailRoute(val sessionId: String)
-
-@Serializable
-data object SearchRoute
-
-@Serializable
-data class DetailRoute(val notificationId: Long)
+@Serializable data object HomeRoute
+@Serializable data class FocusModeDetailRoute(val modeId: String)
+@Serializable data object DigestRoute
+@Serializable data object SearchRoute
+@Serializable data class NotificationDetailRoute(val notificationId: String)
+@Serializable data object OnboardingRoute
+@Serializable data object SettingsRoute

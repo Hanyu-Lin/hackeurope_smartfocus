@@ -9,20 +9,19 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import locked.`in`.data.local.AppDatabase
-import locked.`in`.data.local.MIGRATION_1_2
-import locked.`in`.data.local.MIGRATION_2_3
-import locked.`in`.data.local.MIGRATION_3_4
-import locked.`in`.data.local.MIGRATION_4_5
-import locked.`in`.data.local.dao.FocusSessionDao
-import locked.`in`.data.local.dao.NotificationDao
-import locked.`in`.data.repository.NotificationRepository
-import locked.`in`.data.repository.NotificationRepositoryImpl
-import locked.`in`.data.repository.SessionRepository
-import locked.`in`.data.repository.SessionRepositoryImpl
+import locked.`in`.data.local.dao.BundleMapDao
+import locked.`in`.data.local.dao.FilterRuleDao
+import locked.`in`.data.local.dao.FocusModeDao
+import locked.`in`.data.local.dao.NotificationBundleDao
+import locked.`in`.data.local.dao.NotificationRecordDao
+import locked.`in`.data.repository.BundleRepository
+import locked.`in`.data.repository.BundleRepositoryImpl
+import locked.`in`.data.repository.FocusModeRepository
+import locked.`in`.data.repository.FocusModeRepositoryImpl
+import locked.`in`.data.repository.NotificationRecordRepository
+import locked.`in`.data.repository.NotificationRecordRepositoryImpl
 import locked.`in`.data.repository.SettingsRepository
 import locked.`in`.data.repository.SettingsRepositoryImpl
-import locked.`in`.service.HeuristicNotificationBundler
-import locked.`in`.service.NotificationBundler
 import javax.inject.Singleton
 
 @Module
@@ -35,21 +34,29 @@ object DataModule {
         return Room.databaseBuilder(
             context,
             AppDatabase::class.java,
-            "smartfocus_db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).build()
+            AppDatabase.DATABASE_NAME
+        ).fallbackToDestructiveMigration().build()
     }
 
     @Provides
     @Singleton
-    fun provideNotificationDao(database: AppDatabase): NotificationDao {
-        return database.notificationDao()
-    }
+    fun provideFocusModeDao(db: AppDatabase): FocusModeDao = db.focusModeDao()
 
     @Provides
     @Singleton
-    fun provideFocusSessionDao(database: AppDatabase): FocusSessionDao {
-        return database.focusSessionDao()
-    }
+    fun provideFilterRuleDao(db: AppDatabase): FilterRuleDao = db.filterRuleDao()
+
+    @Provides
+    @Singleton
+    fun provideNotificationRecordDao(db: AppDatabase): NotificationRecordDao = db.notificationRecordDao()
+
+    @Provides
+    @Singleton
+    fun provideBundleMapDao(db: AppDatabase): BundleMapDao = db.bundleMapDao()
+
+    @Provides
+    @Singleton
+    fun provideNotificationBundleDao(db: AppDatabase): NotificationBundleDao = db.notificationBundleDao()
 }
 
 @Module
@@ -58,25 +65,17 @@ abstract class RepositoryModule {
 
     @Binds
     @Singleton
-    abstract fun bindNotificationRepository(
-        impl: NotificationRepositoryImpl
-    ): NotificationRepository
+    abstract fun bindFocusModeRepository(impl: FocusModeRepositoryImpl): FocusModeRepository
 
     @Binds
     @Singleton
-    abstract fun bindSettingsRepository(
-        impl: SettingsRepositoryImpl
-    ): SettingsRepository
+    abstract fun bindNotificationRecordRepository(impl: NotificationRecordRepositoryImpl): NotificationRecordRepository
 
     @Binds
     @Singleton
-    abstract fun bindSessionRepository(
-        impl: SessionRepositoryImpl
-    ): SessionRepository
+    abstract fun bindBundleRepository(impl: BundleRepositoryImpl): BundleRepository
 
     @Binds
     @Singleton
-    abstract fun bindNotificationBundler(
-        impl: HeuristicNotificationBundler
-    ): NotificationBundler
+    abstract fun bindSettingsRepository(impl: SettingsRepositoryImpl): SettingsRepository
 }

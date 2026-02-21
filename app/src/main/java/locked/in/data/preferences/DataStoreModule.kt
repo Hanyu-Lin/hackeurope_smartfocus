@@ -11,7 +11,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
 
-private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "smartfocus_prefs")
+private val Context.dataStore: DataStore<Preferences> by preferencesDataStore(name = "smartfocus_settings")
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -19,7 +19,6 @@ object DataStoreModule {
 
     @Provides
     @Singleton
-    fun provideDataStore(@ApplicationContext context: Context): DataStore<Preferences> {
-        return context.dataStore
-    }
+    fun provideDataStore(@ApplicationContext context: Context): DataStore<Preferences> =
+        context.dataStore
 }

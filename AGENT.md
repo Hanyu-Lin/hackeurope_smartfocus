@@ -2,75 +2,64 @@
 
 ## Project Overview
 
-An Android app that intelligently filters notifications during focus mode. It uses a hybrid rule-based + on-device ML pipeline to classify incoming notifications as important or not, deduplicates cross-app notifications for the same event, and presents a grouped digest when focus mode ends.
+An Android app that intelligently filters notifications during focus mode. It uses a **rule-based engine first** (Phase 1), then adds an on-device ML pipeline (Phase 2) for ambiguous cases, with deduplication and a grouped digest when focus mode ends.
 
 **Target device constraint:** 4GB RAM.
+
+**Current focus:** Phase 1 (non-ML) only. ML components are documented for later.
+
+---
+
+## Tech Stack (Verified)
+
+| Layer                    | Technology                          | Phase | Project status        |
+| ------------------------ | ----------------------------------- | ----- | ---------------------- |
+| Language                 | Kotlin                              | 1     | ✅ in project          |
+| UI                       | Jetpack Compose + Material 3        | 1     | ✅ in project          |
+| DI                       | Hilt                                | 1     | ⬜ to add              |
+| Notification interception| NotificationListenerService         | 1     | ⬜ to add              |
+| Focus mode               | Foreground Service + Quick Settings Tile | 1 | ⬜ to add              |
+| Background reliability   | WorkManager watchdog                | 1     | ⬜ to add              |
+| Local DB                 | Room                                | 1     | ⬜ to add              |
+| Preferences              | DataStore                           | 1     | ⬜ to add              |
+| Contact resolution       | ContactsContract API                | 1     | ⬜ to add              |
+| Summarization / Digest   | Template-based (pure Kotlin)        | 1     | ⬜ to add              |
+| Text embeddings          | TFLite + USE Lite (~20MB)           | 2     | Later                  |
+| Classification head      | TFLite custom model (~5MB)          | 2     | Later                  |
+| Deduplication            | Cosine similarity on embeddings     | 2     | Later                  |
+
+Phase 1 = non-ML MVP. Phase 2 = ML classifier + dedup (build after P0/P1 demo works).
 
 ---
 
 ## Architecture
 
-### Core Pipeline
+### Phase 1 pipeline (current)
 
 ```
-Notification arrives (via NotificationListenerService)
+Notification arrives (NotificationListenerService)
        │
        ▼
 ┌──────────────────┐
-│  Dedup / Cluster  │  ← Embedding cosine similarity + time window
-│                    │    Reuses embeddings from classifier
-└───────┬──────────┘
-        │
-  Duplicate? ──Yes──▶ Inherit priority from existing event cluster
-        │
-       No (new event)
-        │
-        ▼
-┌──────────────────┐
-│  Rule Engine      │  ← Fast heuristics (handles ~60-70% of notifications)
-│  (Stage 1)        │    Contacts, keywords, app allowlist, categories
-└───────┬──────────┘
-        │
-   Confident? ──Yes──▶ Allow / Suppress
-        │
-       No (ambiguous)
-        ▼
-┌──────────────────┐
-│  ML Classifier    │  ← USE Lite embedding + structured features
-│  (Stage 2)        │    TFLite classification head
+│  Rule Engine     │  Contacts, keywords, app allowlist, categories
 └───────┬──────────┘
         │
         ▼
-  Priority Score → Allow / Suppress / Silent delivery
+  Allow / Suppress → Store in Room → (on focus end) Template digest
 ```
 
-### Hot Path vs Cold Path
+### Full pipeline (Phase 2, later)
 
-- **Hot path** (every notification during focus mode): Rule engine → ML classifier → dedup. Must be <100ms, <30MB RAM.
-- **Cold path** (on focus mode end): Template-based digest generation. Pure Kotlin, no model inference.
+- **Dedup/Cluster** (before rules): embedding + time window; reuse embeddings for classifier.
+- **Rule Engine** (Stage 1): same as Phase 1; confident → allow/suppress.
+- **ML Classifier** (Stage 2): only for ambiguous; USE Lite + TFLite head.
+- **Hot path:** &lt;100ms, &lt;30MB RAM. **Cold path:** digest = pure Kotlin, no inference.
 
----
-
-## Tech Stack
-
-| Layer                    | Technology                                      |
-| ------------------------ | ----------------------------------------------- |
-| Language                 | Kotlin                                          |
-| UI                       | Jetpack Compose + Material 3                    |
-| DI                       | Hilt                                            |
-| Notification interception| NotificationListenerService                     |
-| Focus mode               | Foreground Service + Quick Settings Tile         |
-| Background reliability   | WorkManager watchdog                            |
-| Local DB                 | Room                                            |
-| Preferences              | DataStore                                       |
-| Text embeddings          | TFLite + Universal Sentence Encoder Lite (~20MB)|
-| Classification head      | TFLite custom model (~5MB)                      |
-| Contact resolution       | ContactsContract API                            |
-| Deduplication            | Cosine similarity on shared embeddings          |
-| Summarization / Digest   | Template-based grouping engine (pure Kotlin)    |
 ---
 
 ## Key Data Models
+
+Phase 1 can use a subset; Phase 2 extends with `embedding` and `priorityScore`.
 
 ```kotlin
 data class NotificationRecord(
@@ -78,14 +67,15 @@ data class NotificationRecord(
     val packageName: String,
     val title: String,
     val text: String,
-    val embedding: FloatArray,
     val timestamp: Long,
     val isContact: Boolean,
     val isGroupChat: Boolean,
     val hasMention: Boolean,
     val notificationCategory: String?,
-    val priorityScore: Float?,
-    val eventClusterId: String
+    val eventClusterId: String,
+    // Phase 2:
+    val embedding: FloatArray? = null,
+    val priorityScore: Float? = null
 )
 
 data class EventCluster(
@@ -99,54 +89,35 @@ data class EventCluster(
 
 ---
 
-## ML Model Details
+## Build Priority
 
-### Embedding Model
-- **Model:** Universal Sentence Encoder Lite (TFLite)
-- **Size:** ~20MB
-- **Output:** 512-dimensional float vector
-- **Latency:** ~30-50ms on mid-range device
-- **Usage:** Shared across classification and deduplication
+### P0 — Core MVP (Phase 1, build first)
 
-### Classification Head
-- **Architecture:** Small feedforward network (512 + N structured features → 64 → 3 classes)
-- **Input features:**
-  - 512-dim text embedding from USE Lite
-  - `isContact` (bool)
-  - `isGroupChat` (bool)
-  - `hasMention` (bool)
-  - `appType` (categorical: messaging, email, social, productivity, other)
-  - `notificationCategory` (from Android system)
-  - `hourOfDay` (int, normalized)
-- **Output:** 3-class softmax (high / medium / low priority)
-- **Size:** ~5MB
-- **Latency:** <10ms
-- **Training:** Trained on synthetic labeled data, exported to TFLite
+- [ ] `SmartNotificationListener` — intercept and log all notifications
+- [ ] `FocusModeService` + `FocusModeTile` — toggle focus mode
+- [ ] Room DB setup — store notification history
+- [ ] Basic Compose UI — focus mode toggle + notification list
+- [ ] `RuleEngine` — contact matching, keyword detection, app allowlist
+- [ ] Allow/suppress logic wired into listener
+- [ ] `OnboardingScreen` — guide user to enable notification access
 
-### Deduplication
-- **Method:** Cosine similarity on USE Lite embeddings
-- **Threshold:** 0.85 (tunable)
-- **Time window:** 10 minutes
-- **Buffer size:** Last 30 notifications
+### P1 — Impressive Demo (Phase 2, build second)
 
-### Memory Budget
-
-| Component              | RAM     |
-| ---------------------- | ------- |
-| USE Lite               | ~20MB   |
-| Classification head    | ~5MB    |
-| Sliding window buffer  | ~1MB    |
-| Digest engine          | ~0      |
-| **Total ML footprint** | **~26MB** |
+- [ ] `EmbeddingService` — load USE Lite, compute embeddings
+- [ ] `MLClassifier` — TFLite classification head
+- [ ] `ClassifierPipeline` — rules → ML fallback
+- [ ] `DedupEngine` + `SlidingWindowBuffer` — cross-app dedup
+- [ ] `DigestGenerator` — template-based grouped summary
+- [ ] `DigestScreen` — UI to review suppressed notifications
 
 ---
 
-## Rule Engine Heuristics (Stage 1)
+## Rule Engine Heuristics (Phase 1)
 
-These rules are evaluated before ML inference. If a rule produces a confident result, ML is skipped.
+Evaluated before any ML. Confident result → no ML.
 
-| Rule                                       | Result         |
-| ------------------------------------------ | -------------- |
+| Rule                                       | Result          |
+| ------------------------------------------ | --------------- |
 | Sender in phone contacts                   | → High priority |
 | App in user's "always allow" list          | → Pass through  |
 | Category is ALARM or CALL                  | → Always allow  |
@@ -157,46 +128,21 @@ These rules are evaluated before ML inference. If a rule produces a confident re
 
 ---
 
-## Digest Generation (Template-Based)
+## Digest Generation (Phase 1 & 2)
 
-When focus mode ends, generate a digest from suppressed notifications:
+When focus mode ends:
 
-1. Group by `eventClusterId` (deduped events)
-2. Sort by `priorityScore` descending
-3. Split into tiers: "might be important" vs "low priority"
-4. Format important ones with sender + app + preview text
-5. Collapse low-priority into count: "and {X} other notifications"
-6. Display cross-app duplicates as: "{event} (LinkedIn, Gmail)"
-
-No model inference. Pure Kotlin string formatting.
-
----
-
-## Build Priority
-
-### P0 — Core MVP (build first)
-- [ ] `SmartNotificationListener` — intercept and log all notifications
-- [ ] `FocusModeService` + `FocusModeTile` — toggle focus mode
-- [ ] Room DB setup — store notification history
-- [ ] Basic Compose UI — focus mode toggle + notification list
-- [ ] `RuleEngine` — contact matching, keyword detection, app allowlist
-- [ ] Allow/suppress logic wired into listener
-- [ ] `OnboardingScreen` — guide user to enable notification access
-
-### P1 — Impressive Demo (build second)
-- [ ] `EmbeddingService` — load USE Lite, compute embeddings
-- [ ] `MLClassifier` — TFLite classification head for ambiguous notifications
-- [ ] `ClassifierPipeline` — orchestrate rules → ML fallback
-- [ ] `DedupEngine` + `SlidingWindowBuffer` — cross-app dedup using shared embeddings
-- [ ] `DigestGenerator` — template-based grouped summary on focus mode end
-- [ ] `DigestScreen` — UI to review suppressed notifications
+1. Group by `eventClusterId` (Phase 2: deduped events; Phase 1: by app/time or simple grouping).
+2. Sort by priority (Phase 2: `priorityScore`; Phase 1: rule outcome or time).
+3. Format with sender + app + preview; collapse low-priority into "and X other notifications."
+4. No model inference; pure Kotlin.
 
 ---
 
 ## Android Permissions Required
 
 ```xml
-<!-- Notification access — user must manually enable in Settings -->
+<!-- Notification access — user must enable in Settings -->
 <service
     android:name=".service.SmartNotificationListener"
     android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
@@ -205,59 +151,53 @@ No model inference. Pure Kotlin string formatting.
     </intent-filter>
 </service>
 
-<!-- Foreground service for focus mode -->
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
 <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
-<!-- Contact resolution -->
 <uses-permission android:name="android.permission.READ_CONTACTS" />
-
-<!-- Quick Settings tile -->
-<!-- No extra permission needed, just declare the TileService -->
 ```
-
----
-
-## Synthetic Training Data
-
-Training data should be generated before the hackathon. Target: ~2000-3000 labeled examples.
-
-**Categories to cover:**
-- Direct messages from known contacts (high priority)
-- @mentions in group chats (high priority)
-- Urgent keywords in any context (high priority)
-- Group chat general messages (low priority)
-- Bot / automated notifications (low priority)
-- Promotional emails (low priority)
-- Calendar reminders (medium priority)
-- Transactional alerts — delivery, payment (medium priority)
-- Social media activity — likes, follows (low priority)
-
-**Format:** CSV with columns: `text`, `app_type`, `is_contact`, `is_group`, `has_mention`, `category`, `label`
-
-**Label values:** `high`, `medium`, `low`
 
 ---
 
 ## Coding Conventions
 
-- Follow Kotlin coding conventions and Android best practices
-- Use coroutines and Flow for async operations
-- All TFLite inference runs on `Dispatchers.Default`, never on main thread
-- Room operations use suspend functions
-- ViewModels expose StateFlow to Compose UI
-- Use sealed classes for UI state (Loading, Success, Error)
-- Keep services lightweight — delegate logic to injected repository/engine classes
-- Write unit tests for RuleEngine and DedupEngine (deterministic, no Android dependencies)
+- Kotlin conventions and Android best practices
+- Coroutines and Flow for async; Room suspend functions
+- ViewModels expose StateFlow to Compose; sealed classes for UI state (Loading, Success, Error)
+- Services stay thin — delegate to injected repository/engine
+- Unit tests for RuleEngine (and later DedupEngine); no Android deps in engine tests
 
 ---
 
 ## Key Gotchas
 
-1. **NotificationListenerService** requires the user to manually enable it in Settings > Notifications > Notification access. The onboarding flow must guide them there.
-2. The service can be killed by the system. The WorkManager watchdog should check and prompt the user to re-enable if needed.
-3. Some apps (e.g., WhatsApp) use a single notification key and update it. Check `sbn.key` to distinguish updates from new notifications.
-4. On Android 13+, `POST_NOTIFICATIONS` requires runtime permission for your own digest notification.
-5. TFLite interpreter should be initialized once and reused, not created per inference call.
-6. USE Lite input has a max sequence length — truncate long notification text before encoding.
+1. **NotificationListenerService** must be enabled by user in Settings → Notifications → Notification access. Onboarding must guide them.
+2. Service can be killed; use a WorkManager watchdog to detect and prompt re-enable.
+3. Some apps (e.g. WhatsApp) reuse one notification key; use `sbn.key` to tell updates from new notifications.
+4. Android 13+: request `POST_NOTIFICATIONS` at runtime for your own digest notification.
+5. *(Phase 2)* TFLite interpreter: init once, reuse; run on `Dispatchers.Default`. USE Lite has max sequence length — truncate long text.
+
+---
+
+## Phase 2 — ML (reference only for now)
+
+### Embedding + classification
+
+- **Embedding:** USE Lite, ~20MB, 512-dim, ~30–50ms.
+- **Classifier:** 512 + structured features → 64 → 3 classes (high/medium/low), ~5MB, &lt;10ms.
+- **Dedup:** cosine similarity on embeddings, threshold 0.85, 10-min window, last 30 notifications.
+
+### Synthetic training data (when building Phase 2)
+
+- Target ~2000–3000 labeled examples.
+- Categories: DMs from contacts, @mentions, urgent keywords, group chat general, bot/promo, calendar, transactional, social.
+- Format: CSV with `text`, `app_type`, `is_contact`, `is_group`, `has_mention`, `category`, `label` (`high`|`medium`|`low`).
+
+### Memory budget (Phase 2)
+
+| Component           | RAM   |
+| ------------------- | ----- |
+| USE Lite            | ~20MB |
+| Classification head | ~5MB  |
+| Sliding window      | ~1MB  |
+| **Total ML**        | **~26MB** |

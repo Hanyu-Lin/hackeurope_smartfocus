@@ -26,7 +26,7 @@ class LangCache(Dataset):
         return 2 * self.size
 
     def __getitem__(self, index):
-        item = self.ds[index % len(self)]
+        item = self.ds[index % self.size]
 
         same = 2 * index < len(self)
 
@@ -39,8 +39,8 @@ class LangCache(Dataset):
         }
 
         if not same:
-            index = (self.multiplier * index) % len(self)
-            item = self.ds[index % len(self)]
+            index = (self.multiplier * index) % self.size
+            item = self.ds[index]
 
         notification_2 = {
             "appinfo": self.app_types[index % len(self.app_types)],
@@ -50,7 +50,7 @@ class LangCache(Dataset):
             "category": self.categories[index % len(self.categories)],
         }
 
-        y = float(item["label"])
+        y = float(item["label"]) if same else 0
         return (notification_1, notification_2), y
 
 
@@ -60,14 +60,14 @@ class LockIn(Dataset):
         self.datasets = datasets
         self.len = sum(len(ds) for ds in datasets)
         self.ds_at_idx = torch.repeat_interleave(torch.tensor([len(ds) for ds in datasets]))
-        self.idx_at_idx = torch.arange(torch.tensor([len(ds) for ds in datasets]))
+        self.idx_at_idx = torch.concat([torch.arange(len(ds)) for ds in datasets], dim=0)
         self.preprocess = preprocess
 
     def __len__(self):
         return self.len
 
     def __getitem__(self, index):
-        data_point, y = self.datasets[self.ds_at_idx[index]][self.idx_at_idx[index]]
+        data_point, y = self.datasets[self.ds_at_idx[index].item()][self.idx_at_idx[index].item()]
         if self.preprocess is not None:
             data_point = self.preprocess(data_point)
         return data_point, y
@@ -85,13 +85,13 @@ class NotifyAI(Dataset):
         item = self.ds[index]
 
         ret = {
-            "appinfo": item["app"],
-            "title": item["title"],
-            "text": item["body"],
+            "appinfo": item["notification"]["app"],
+            "title": item["notification"]["title"],
+            "text": item["notification"]["body"],
             "bigText": "",
             "categpry": "email/msg"
         }
-        return ret, item["priority"]
+        return ret, float(item["classification"]["priority"])/5
 
 class CustomerSupportTicketsPriority(Dataset):
     def __init__(self, *, app_types=APP_TYPES, categories=CATEGORIES, multiplyer=31):
@@ -151,7 +151,7 @@ class CustomerSupportTicketsSimilarity(Dataset):
         return self.ds.num_rows * 2
 
     def __getitem__(self, index):
-        item = self.ds[index]
+        item = self.ds[index % self.ds.num_rows]
 
         same = index % 2 == 0
 

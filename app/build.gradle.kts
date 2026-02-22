@@ -16,7 +16,7 @@ android {
 
     defaultConfig {
         applicationId = "locked.in"
-        minSdk = 24
+        minSdk = 26
         targetSdk = 36
         versionCode = 1
         versionName = "1.0"
@@ -77,6 +77,19 @@ dependencies {
     // Serialization
     implementation(libs.kotlinx.serialization.json)
 
+    implementation(platform("ai.djl:bom:0.33.0"))
+
+    // Core DJL API
+    implementation("ai.djl:api")
+
+    // Android runtime/core support
+    implementation("ai.djl.android:core")
+
+    // DJL engines
+    runtimeOnly("ai.djl.pytorch:pytorch-engine")
+    runtimeOnly("ai.djl.android:pytorch-native")
+    runtimeOnly("ai.djl.android:onnxruntime")
+    runtimeOnly("ai.djl.android:tokenizer_native")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

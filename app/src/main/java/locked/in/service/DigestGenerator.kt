@@ -13,12 +13,13 @@ class DigestGenerator @Inject constructor() {
 
         val suppressed = records.filter { it.outcome == NotificationOutcome.SUPPRESSED.name }
         val bundled = records.filter { it.outcome == NotificationOutcome.BUNDLED.name }
+        val allowed = records.filter { it.outcome == NotificationOutcome.ALLOWED.name || it.outcome == NotificationOutcome.PASSED_THROUGH.name }
 
         val sb = StringBuilder()
         sb.appendLine("Focus Session Summary")
         sb.appendLine("---------------------")
         sb.appendLine("${records.size} notifications total")
-        sb.appendLine("${suppressed.size} suppressed, ${bundled.size} bundled")
+        sb.appendLine("${suppressed.size} suppressed, ${bundled.size} bundled, ${allowed.size} allowed")
 
         // Group bundled by bundleId
         val bundleGroups = bundled.groupBy { it.bundleId ?: "unknown" }

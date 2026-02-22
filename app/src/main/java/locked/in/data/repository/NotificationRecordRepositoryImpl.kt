@@ -28,6 +28,9 @@ class NotificationRecordRepositoryImpl @Inject constructor(
     override suspend fun getForDigest(since: Long, outcomes: List<String>): List<NotificationRecordEntity> =
         dao.getForDigest(since, outcomes)
 
+    override fun observeForDigest(since: Long, outcomes: List<String>): Flow<List<NotificationRecordEntity>> =
+        dao.observeForDigest(since, outcomes)
+
     override suspend fun search(query: String): List<NotificationRecordEntity> =
         dao.search(query)
 

@@ -36,7 +36,7 @@ class ClassifierPipeline @Inject constructor(
 
         if (activeModes.isEmpty()) {
             Log.d(TAG, "No active focus mode — pass through: ${parsed.appLabel} / ${parsed.title}")
-            persist(parsed, NotificationOutcome.PASSED_THROUGH, null)
+            persist(parsed, NotificationOutcome.ALLOWED, null)
             return PipelineResult.PassThrough
         }
 
@@ -47,7 +47,7 @@ class ClassifierPipeline @Inject constructor(
 
         if (effectiveModes.isEmpty()) {
             Log.d(TAG, "All active modes are outside their schedule window — pass through: ${parsed.appLabel} / ${parsed.title}")
-            persist(parsed, NotificationOutcome.PASSED_THROUGH, null)
+            persist(parsed, NotificationOutcome.ALLOWED, null)
             return PipelineResult.PassThrough
         }
 
@@ -75,7 +75,7 @@ class ClassifierPipeline @Inject constructor(
             }
             is RuleResult.NoMatch -> {
                 Log.d(TAG, "No rule matched — pass through: ${parsed.appLabel} / ${parsed.title}")
-                persist(parsed, NotificationOutcome.PASSED_THROUGH, null)
+                persist(parsed, NotificationOutcome.ALLOWED, null)
                 PipelineResult.PassThrough
             }
         }

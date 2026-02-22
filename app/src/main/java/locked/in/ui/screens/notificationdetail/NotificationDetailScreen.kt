@@ -76,10 +76,16 @@ fun NotificationDetailScreen(
         }
 
         val outcomeColor = when (r.outcome) {
-            NotificationOutcome.ALLOWED.name -> MaterialTheme.colorScheme.tertiary
+            NotificationOutcome.ALLOWED.name, NotificationOutcome.PASSED_THROUGH.name -> MaterialTheme.colorScheme.tertiary
             NotificationOutcome.SUPPRESSED.name -> MaterialTheme.colorScheme.error
             NotificationOutcome.BUNDLED.name -> MaterialTheme.colorScheme.secondary
             else -> MaterialTheme.colorScheme.onSurfaceVariant
+        }
+        val outcomeLabel = when (r.outcome) {
+            NotificationOutcome.ALLOWED.name, NotificationOutcome.PASSED_THROUGH.name -> "Allowed"
+            NotificationOutcome.SUPPRESSED.name -> "Suppressed"
+            NotificationOutcome.BUNDLED.name -> "Bundled"
+            else -> r.outcome
         }
         val timeFormat = SimpleDateFormat("MMM d, h:mm a", Locale.getDefault())
 
@@ -103,7 +109,7 @@ fun NotificationDetailScreen(
                 )
                 SuggestionChip(
                     onClick = { },
-                    label = { Text(r.outcome.lowercase().replaceFirstChar { it.uppercase() }) },
+                    label = { Text(outcomeLabel) },
                     colors = SuggestionChipDefaults.suggestionChipColors(
                         containerColor = outcomeColor.copy(alpha = 0.12f),
                         labelColor = outcomeColor

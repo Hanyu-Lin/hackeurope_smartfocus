@@ -15,7 +15,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Inbox
-import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ElevatedCard
@@ -35,7 +34,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
-import locked.`in`.domain.model.NotificationOutcome
 import locked.`in`.ui.components.NotificationCard
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -99,7 +97,6 @@ fun DigestScreen(
                 .padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            // Stats summary card
             item {
                 Spacer(Modifier.height(4.dp))
                 ElevatedCard(
@@ -115,45 +112,16 @@ fun DigestScreen(
                         StatItem("Total", uiState.totalCount)
                         StatItem("Suppressed", uiState.suppressedCount)
                         StatItem("Bundled", uiState.bundledCount)
+                        StatItem("Allowed", uiState.allowedCount)
                     }
                 }
             }
-
-            // Digest text
-            item {
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Text(
-                        uiState.digestText,
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                }
+            items(uiState.records) { record ->
+                NotificationCard(
+                    record = record,
+                    onClick = { onNavigateToDetail(record.id) }
+                )
             }
-
-            // Group by outcome
-            val grouped = uiState.records.groupBy { it.outcome }
-            val outcomeOrder = listOf(
-                NotificationOutcome.SUPPRESSED.name to "Suppressed",
-                NotificationOutcome.BUNDLED.name to "Bundled"
-            )
-
-            outcomeOrder.forEach { (outcome, label) ->
-                val records = grouped[outcome] ?: return@forEach
-                item {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "$label (${records.size})",
-                        style = MaterialTheme.typography.titleMedium
-                    )
-                }
-                items(records) { record ->
-                    NotificationCard(
-                        record = record,
-                        onClick = { onNavigateToDetail(record.id) }
-                    )
-                }
-            }
-
             item { Spacer(Modifier.height(8.dp)) }
         }
     }

@@ -10,6 +10,7 @@ interface NotificationRecordRepository {
     suspend fun getByOutcome(outcome: String): List<NotificationRecordEntity>
     suspend fun getByBundleId(bundleId: String): List<NotificationRecordEntity>
     suspend fun getForDigest(since: Long, outcomes: List<String>): List<NotificationRecordEntity>
+    fun observeForDigest(since: Long, outcomes: List<String>): Flow<List<NotificationRecordEntity>>
     suspend fun search(query: String): List<NotificationRecordEntity>
     suspend fun countSince(since: Long): Int
     suspend fun countSinceByOutcome(since: Long, outcome: String): Int

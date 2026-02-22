@@ -36,6 +36,9 @@ interface NotificationRecordDao {
     @Query("SELECT * FROM notification_records WHERE timestamp >= :since AND outcome IN (:outcomes) ORDER BY priorityScore DESC, timestamp DESC")
     suspend fun getForDigest(since: Long, outcomes: List<String>): List<NotificationRecordEntity>
 
+    @Query("SELECT * FROM notification_records WHERE timestamp >= :since AND outcome IN (:outcomes) ORDER BY priorityScore DESC, timestamp DESC")
+    fun observeForDigest(since: Long, outcomes: List<String>): Flow<List<NotificationRecordEntity>>
+
     @Query("""
         SELECT notification_records.* FROM notification_records
         JOIN notification_records_fts ON notification_records.rowid = notification_records_fts.rowid

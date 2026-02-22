@@ -16,7 +16,7 @@ class NaiveNotificationModel @Inject constructor() : NotificationModel {
         return ModelOutput(
             priority = 5.0f,
             group = group,
-            latent = FloatArray(1024) { 0f }
+            latent = FloatArray(384) { 0f }
         )
     }
 }

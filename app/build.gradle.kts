@@ -85,11 +85,14 @@ dependencies {
     // Android runtime/core support
     implementation("ai.djl.android:core")
 
+    // HuggingFace tokenizer Java API
+    implementation("ai.djl.huggingface:tokenizers")
+
     // DJL engines
     runtimeOnly("ai.djl.pytorch:pytorch-engine")
     runtimeOnly("ai.djl.android:pytorch-native")
     runtimeOnly("ai.djl.android:onnxruntime")
-    runtimeOnly("ai.djl.android:tokenizer_native")
+    runtimeOnly("ai.djl.android:tokenizer-native:0.33.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)

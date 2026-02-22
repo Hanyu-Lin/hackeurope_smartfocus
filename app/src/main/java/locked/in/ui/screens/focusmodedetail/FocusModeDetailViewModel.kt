@@ -47,10 +47,10 @@ class FocusModeDetailViewModel @Inject constructor(
     private var scheduleEvaluateJob: Job? = null
 
     init {
-        // Sync schedule state when navigating to this screen
-        viewModelScope.launch {
-            focusModeController.evaluateSchedule()
-        }
+        // Do not run evaluateSchedule() here: opening the detail screen is for viewing/editing.
+        // Running it can deactivate the current mode if it's wrongly considered out-of-window
+        // (e.g. scheduleDays empty in DB or timing edge). Schedule is already evaluated on
+        // boundary alarms and when the user changes schedule (onScheduleChanged).
 
         // Reactively observe both the mode entity AND its rules.
         // Any DB change (isActive, schedule fields, name, etc.) automatically

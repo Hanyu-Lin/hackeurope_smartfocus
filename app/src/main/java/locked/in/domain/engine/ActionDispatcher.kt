@@ -1,9 +1,9 @@
 package locked.`in`.domain.engine
 
 import android.content.Context
-import android.media.AudioAttributes
 import android.media.AudioManager
-import android.media.SoundPool
+import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -28,30 +28,21 @@ class ActionDispatcher @Inject constructor(
         }
     }
 
-    private val soundPool: SoundPool by lazy {
-        SoundPool.Builder()
-            .setMaxStreams(1)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                    .build()
-            )
-            .build()
-    }
-
     fun dispatch(action: RuleAction) {
         when (action) {
             RuleAction.BUZZ -> {
                 vibrator.vibrate(VibrationEffect.createOneShot(300, VibrationEffect.DEFAULT_AMPLITUDE))
             }
             RuleAction.ALARM -> {
-                val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-                val volume = audioManager.getStreamVolume(AudioManager.STREAM_NOTIFICATION).toFloat() /
-                    audioManager.getStreamMaxVolume(AudioManager.STREAM_NOTIFICATION).toFloat()
-                // Play default notification sound via SoundPool
-                // In production, load a user-selected sound; for now use a short beep
-                soundPool.play(0, volume, volume, 1, 0, 1f)
+                val uri: Uri? = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_NOTIFICATION)
+                    ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
+                uri?.let {
+                    runCatching {
+                        val ringtone = RingtoneManager.getRingtone(context, it)
+                        ringtone.streamType = AudioManager.STREAM_NOTIFICATION
+                        ringtone.play()
+                    }
+                }
             }
             RuleAction.SILENT -> {
                 // Force silent — no action needed, notification passes through silently

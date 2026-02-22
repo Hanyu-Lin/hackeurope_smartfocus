@@ -14,6 +14,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import locked.`in`.data.repository.SettingsRepository
+import locked.`in`.domain.engine.ActionDispatcher
 
 class SmartNotificationListener : NotificationListenerService() {
 
@@ -28,6 +29,7 @@ class SmartNotificationListener : NotificationListenerService() {
         fun notificationParser(): NotificationParser
         fun classifierPipeline(): ClassifierPipeline
         fun suppressedNotificationPoster(): SuppressedNotificationPoster
+        fun actionDispatcher(): ActionDispatcher
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -40,6 +42,7 @@ class SmartNotificationListener : NotificationListenerService() {
     private val parser by lazy { entryPoint.notificationParser() }
     private val pipeline by lazy { entryPoint.classifierPipeline() }
     private val suppressedPoster by lazy { entryPoint.suppressedNotificationPoster() }
+    private val actionDispatcher by lazy { entryPoint.actionDispatcher() }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -78,7 +81,8 @@ class SmartNotificationListener : NotificationListenerService() {
                         // Notification passes through untouched
                     }
                     is PipelineResult.Allow -> {
-                        // Rule matched ALLOW — notification passes through untouched
+                        // Rule matched ALLOW — notification passes through; dispatch action (alarm/buzz/silent)
+                        actionDispatcher.dispatch(result.action)
                     }
                     is PipelineResult.Suppress -> {
                         // Cancel the original notification and resurface from our app.

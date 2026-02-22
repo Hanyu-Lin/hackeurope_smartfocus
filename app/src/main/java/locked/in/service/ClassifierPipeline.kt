@@ -34,7 +34,7 @@ class ClassifierPipeline @Inject constructor(
 
     companion object {
         private const val TAG = "ClassifierPipeline"
-        private const val SUPPRESS_THRESHOLD = 0.3f
+        private const val SUPPRESS_THRESHOLD = 0.5f
     }
 
     suspend fun process(parsed: ParsedNotification): PipelineResult {
@@ -76,7 +76,7 @@ class ClassifierPipeline @Inject constructor(
     private suspend fun classifyWithModel(parsed: ParsedNotification): PipelineResult {
         return try {
             val output = notificationModel.infer(parsed.rawPrompt, parsed.packageName)
-            Log.d(TAG, "Model output: priority=${output.priority}, latent_dim=${output.latent.size}")
+            Log.d(TAG, "Model output: priority=${output.priority}, group=${output.group.contentToString()}, latent_dim=${output.latent.size}")
 
             if (output.priority < SUPPRESS_THRESHOLD) {
                 Log.d(TAG, "Model suppressing low-priority notification: ${parsed.appLabel} / ${parsed.title}")

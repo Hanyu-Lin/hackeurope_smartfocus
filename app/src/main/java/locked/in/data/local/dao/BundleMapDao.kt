@@ -25,6 +25,9 @@ interface BundleMapDao {
     suspend fun nextIndex(): Int
 
 
+    @Query("SELECT * FROM bundle_map")
+    suspend fun getAll(): List<BundleMapEntryEntity>
+
     @Query("SELECT COUNT(*) FROM bundle_map")
     suspend fun count(): Int
 

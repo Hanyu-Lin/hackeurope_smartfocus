@@ -22,6 +22,9 @@ class BundleRepositoryImpl @Inject constructor(
     override suspend fun getBundleMapByBundleId(bundleId: String): BundleMapEntryEntity? =
         bundleMapDao.getByBundleId(bundleId)
 
+    override suspend fun getAllBundleMapEntries(): List<BundleMapEntryEntity> =
+        bundleMapDao.getAll()
+
     override suspend fun updateCentroid(index: Int, centroid: ByteArray, updatedAt: Long) =
         bundleMapDao.updateCentroid(index, centroid, updatedAt)
 

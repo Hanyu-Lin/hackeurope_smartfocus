@@ -7,6 +7,7 @@ interface BundleRepository {
     suspend fun insertBundleMapEntry(entity: BundleMapEntryEntity)
     suspend fun getBundleMapByIndex(index: Int): BundleMapEntryEntity?
     suspend fun getBundleMapByBundleId(bundleId: String): BundleMapEntryEntity?
+    suspend fun getAllBundleMapEntries(): List<BundleMapEntryEntity>
     suspend fun updateCentroid(index: Int, centroid: ByteArray, updatedAt: Long)
     suspend fun nextBundleIndex(): Int
     suspend fun bundleMapCount(): Int

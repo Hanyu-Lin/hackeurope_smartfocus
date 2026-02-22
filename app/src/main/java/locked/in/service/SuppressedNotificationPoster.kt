@@ -1,10 +1,10 @@
 package locked.`in`.service
 
-import android.app.NotificationManager
 import android.content.Context
 import android.content.pm.PackageManager
 import android.graphics.drawable.BitmapDrawable
 import androidx.core.app.NotificationCompat
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.graphics.drawable.toBitmap
 import dagger.hilt.android.qualifiers.ApplicationContext
 import locked.`in`.R
@@ -18,7 +18,7 @@ class SuppressedNotificationPoster @Inject constructor(
 ) {
 
     private val notificationManager by lazy {
-        context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        NotificationManagerCompat.from(context)
     }
 
     private var nextId = 30_000
@@ -62,7 +62,7 @@ class SuppressedNotificationPoster @Inject constructor(
 
     fun clearAll() {
         // Only clears suppressed notifications posted by us (they share a range)
-        // NotificationManager doesn't support range cancel, so we track nothing here.
+        // NotificationManagerCompat doesn't support range cancel, so we track nothing here.
         // They auto-cancel on tap. On focus mode end, the digest replaces them.
     }
 

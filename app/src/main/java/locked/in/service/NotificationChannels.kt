@@ -28,10 +28,10 @@ object NotificationChannels {
                 description = "Summary of notifications filtered during focus mode"
             },
             NotificationChannel(
-                BUNDLE_CHANNEL_ID, "Bundled Notifications", NotificationManager.IMPORTANCE_LOW
+                BUNDLE_CHANNEL_ID, "Grouped notifications", NotificationManager.IMPORTANCE_DEFAULT
             ).apply {
-                description = "Grouped notifications shown during focus mode"
-                setShowBadge(false)
+                description = "Notifications grouped by app during focus mode — tap to open the app"
+                setShowBadge(true)
             },
             NotificationChannel(
                 ALARM_CHANNEL_ID, "Alarm Notifications", NotificationManager.IMPORTANCE_HIGH

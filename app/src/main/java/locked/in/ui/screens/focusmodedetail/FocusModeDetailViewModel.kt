@@ -7,6 +7,7 @@ import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import locked.`in`.data.repository.FocusModeRepository
 import locked.`in`.data.repository.SettingsRepository
@@ -42,15 +43,25 @@ class FocusModeDetailViewModel @Inject constructor(
     val uiState: StateFlow<FocusModeDetailUiState> = _uiState
 
     init {
+        // Sync schedule state when navigating to this screen
         viewModelScope.launch {
-            repository.observeRulesForMode(modeId).collect { rules ->
-                val mode = repository.getById(modeId)
-                _uiState.value = FocusModeDetailUiState(
-                    mode = mode,
+            focusModeController.evaluateSchedule()
+        }
+
+        // Reactively observe both the mode entity AND its rules.
+        // Any DB change (isActive, schedule fields, name, etc.) automatically
+        // propagates to the UI — no manual refreshMode() needed.
+        viewModelScope.launch {
+            combine(
+                repository.observeById(modeId),
+                repository.observeRulesForMode(modeId)
+            ) { mode, rules ->
+                FocusModeDetailUiState(
+                    mode = mode?.copy(rules = rules),
                     rules = rules,
                     isLoading = false
                 )
-            }
+            }.collect { _uiState.value = it }
         }
     }
 
@@ -58,7 +69,6 @@ class FocusModeDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val mode = repository.getById(modeId) ?: return@launch
             repository.update(mode.copy(name = name))
-            refreshMode()
         }
     }
 
@@ -66,7 +76,6 @@ class FocusModeDetailViewModel @Inject constructor(
         viewModelScope.launch {
             val mode = repository.getById(modeId) ?: return@launch
             repository.update(mode.copy(priorityThreshold = threshold))
-            refreshMode()
         }
     }
 
@@ -84,11 +93,6 @@ class FocusModeDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun refreshMode() {
-        val mode = repository.getById(modeId)
-        _uiState.value = _uiState.value.copy(mode = mode)
-    }
-
     fun updateRule(rule: FilterRule) {
         viewModelScope.launch {
             repository.updateRule(rule)
@@ -104,15 +108,41 @@ class FocusModeDetailViewModel @Inject constructor(
     fun toggleActive() {
         viewModelScope.launch {
             focusModeController.toggle(modeId)
-            val mode = repository.getById(modeId)
-            _uiState.value = _uiState.value.copy(mode = mode)
+        }
+    }
+
+    fun toggleTimerEnabled() {
+        viewModelScope.launch {
+            val mode = repository.getById(modeId) ?: return@launch
+            val newTimerEnabled = !mode.timerEnabled
+            repository.update(
+                mode.copy(
+                    timerEnabled = newTimerEnabled,
+                    scheduleEnabled = if (newTimerEnabled) false else mode.scheduleEnabled
+                )
+            )
+            onScheduleChanged()
+        }
+    }
+
+    fun updateTimerDuration(minutes: Int) {
+        viewModelScope.launch {
+            val mode = repository.getById(modeId) ?: return@launch
+            repository.update(mode.copy(timerDurationMinutes = minutes))
+            onScheduleChanged()
         }
     }
 
     fun toggleScheduleEnabled() {
         viewModelScope.launch {
             val mode = repository.getById(modeId) ?: return@launch
-            repository.update(mode.copy(scheduleEnabled = !mode.scheduleEnabled))
+            val newScheduleEnabled = !mode.scheduleEnabled
+            repository.update(
+                mode.copy(
+                    scheduleEnabled = newScheduleEnabled,
+                    timerEnabled = if (newScheduleEnabled) false else mode.timerEnabled
+                )
+            )
             onScheduleChanged()
         }
     }
@@ -142,11 +172,12 @@ class FocusModeDetailViewModel @Inject constructor(
     }
 
     private suspend fun onScheduleChanged() {
-        // Clear manual override — the user is actively editing schedule settings
+        // User is actively configuring the schedule — clear any manual override
+        // so evaluateSchedule follows the new schedule purely.
         settingsRepository.setScheduleOverrideModeId(null)
-        // Only activate if the new schedule matches now; never deactivate mid-edit
-        focusModeController.evaluateScheduleForActivation()
-        refreshMode()
+        // Full evaluate: activates if schedule matches now, deactivates if not.
+        // The reactive observeById flow will push the new isActive to the UI.
+        focusModeController.evaluateSchedule()
     }
 
     fun deleteMode(onDone: () -> Unit) {

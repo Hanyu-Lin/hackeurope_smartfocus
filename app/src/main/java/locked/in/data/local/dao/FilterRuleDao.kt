@@ -11,6 +11,9 @@ import locked.`in`.data.local.entity.FilterRuleEntity
 @Dao
 interface FilterRuleDao {
 
+    @Query("SELECT * FROM filter_rules ORDER BY sortOrder ASC")
+    fun observeAll(): Flow<List<FilterRuleEntity>>
+
     @Query("SELECT * FROM filter_rules WHERE focusModeId = :focusModeId ORDER BY sortOrder ASC")
     fun observeByFocusModeId(focusModeId: String): Flow<List<FilterRuleEntity>>
 

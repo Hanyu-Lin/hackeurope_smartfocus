@@ -11,8 +11,6 @@ import locked.`in`.ui.screens.home.HomeScreen
 import locked.`in`.ui.screens.notificationdetail.NotificationDetailScreen
 import locked.`in`.ui.screens.onboarding.OnboardingScreen
 import locked.`in`.ui.screens.search.SearchScreen
-import locked.`in`.ui.screens.settings.SettingsScreen
-
 @Composable
 fun AppNavigation(
     startOnboarding: Boolean = false
@@ -30,8 +28,7 @@ fun AppNavigation(
                 onNavigateToFocusModeDetail = { modeId ->
                     navController.navigate(FocusModeDetailRoute(modeId))
                 },
-                onNavigateToDigest = { navController.navigate(DigestRoute) },
-                onNavigateToSettings = { navController.navigate(SettingsRoute) }
+                onNavigateToDigest = { navController.navigate(DigestRoute) }
             )
         }
         composable<FocusModeDetailRoute> { backStackEntry ->
@@ -65,11 +62,6 @@ fun AppNavigation(
                         popUpTo(OnboardingRoute) { inclusive = true }
                     }
                 }
-            )
-        }
-        composable<SettingsRoute> {
-            SettingsScreen(
-                onNavigateBack = { navController.popBackStack() }
             )
         }
     }

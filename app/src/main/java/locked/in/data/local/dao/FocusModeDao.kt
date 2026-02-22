@@ -17,11 +17,14 @@ interface FocusModeDao {
     @Query("SELECT * FROM focus_modes WHERE id = :id")
     suspend fun getById(id: String): FocusModeEntity?
 
-    @Query("SELECT * FROM focus_modes WHERE isActive = 1 LIMIT 1")
-    suspend fun getActive(): FocusModeEntity?
+    @Query("SELECT * FROM focus_modes WHERE id = :id")
+    fun observeById(id: String): Flow<FocusModeEntity?>
 
-    @Query("SELECT * FROM focus_modes WHERE isActive = 1 LIMIT 1")
-    fun observeActive(): Flow<FocusModeEntity?>
+    @Query("SELECT * FROM focus_modes WHERE isActive = 1")
+    suspend fun getActiveModes(): List<FocusModeEntity>
+
+    @Query("SELECT * FROM focus_modes WHERE isActive = 1")
+    fun observeActiveModes(): Flow<List<FocusModeEntity>>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: FocusModeEntity)
@@ -34,6 +37,9 @@ interface FocusModeDao {
 
     @Query("UPDATE focus_modes SET isActive = 0")
     suspend fun deactivateAll()
+
+    @Query("UPDATE focus_modes SET isActive = 0 WHERE id = :id")
+    suspend fun deactivateMode(id: String)
 
     @Query("UPDATE focus_modes SET isActive = 1 WHERE id = :id")
     suspend fun activate(id: String)

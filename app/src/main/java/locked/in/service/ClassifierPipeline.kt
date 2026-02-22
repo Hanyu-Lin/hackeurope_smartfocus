@@ -32,18 +32,31 @@ class ClassifierPipeline @Inject constructor(
     }
 
     suspend fun process(parsed: ParsedNotification): PipelineResult {
-        val activeMode = focusModeRepository.getActive()
+        val activeModes = focusModeRepository.getActive()
 
-        if (activeMode == null) {
+        if (activeModes.isEmpty()) {
             Log.d(TAG, "No active focus mode — pass through: ${parsed.appLabel} / ${parsed.title}")
             persist(parsed, NotificationOutcome.PASSED_THROUGH, null)
             return PipelineResult.PassThrough
         }
 
-        Log.d(TAG, "Active mode: ${activeMode.name} with ${activeMode.rules.size} rules")
+        // Filter out scheduled modes that are outside their window
+        val effectiveModes = activeModes.filter { mode ->
+            !mode.scheduleEnabled || ScheduleUtil.isInScheduledWindow(mode)
+        }
+
+        if (effectiveModes.isEmpty()) {
+            Log.d(TAG, "All active modes are outside their schedule window — pass through: ${parsed.appLabel} / ${parsed.title}")
+            persist(parsed, NotificationOutcome.PASSED_THROUGH, null)
+            return PipelineResult.PassThrough
+        }
+
+        // Merge rules from all effective modes
+        val mergedRules = effectiveModes.flatMap { it.rules }
+        Log.d(TAG, "Active modes: ${effectiveModes.joinToString { it.name }} with ${mergedRules.size} merged rules")
         Log.d(TAG, "Evaluating: pkg=${parsed.packageName}, category=${parsed.category}, title=${parsed.title}, text=${parsed.text.take(50)}")
 
-        val ruleResult = RuleEngine.evaluate(parsed, activeMode.rules)
+        val ruleResult = RuleEngine.evaluate(parsed, mergedRules)
 
         return when (ruleResult) {
             is RuleResult.Match -> {
@@ -61,7 +74,6 @@ class ClassifierPipeline @Inject constructor(
                 }
             }
             is RuleResult.NoMatch -> {
-                // No rule matched — pass through untouched (notification keeps original appearance)
                 Log.d(TAG, "No rule matched — pass through: ${parsed.appLabel} / ${parsed.title}")
                 persist(parsed, NotificationOutcome.PASSED_THROUGH, null)
                 PipelineResult.PassThrough

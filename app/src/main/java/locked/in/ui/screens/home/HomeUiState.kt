@@ -6,10 +6,7 @@ sealed class HomeUiState {
     data object Loading : HomeUiState()
     data class Success(
         val focusModes: List<FocusMode>,
-        val activeMode: FocusMode?,
-        val recentNotificationCount: Int,
-        val suppressedCount: Int = 0,
-        val allowedCount: Int = 0,
-        val bundledCount: Int = 0
+        val activeModes: List<FocusMode>,
+        val timerEndTimes: Map<String, Long> = emptyMap()
     ) : HomeUiState()
 }

@@ -8,4 +8,3 @@ import kotlinx.serialization.Serializable
 @Serializable data object SearchRoute
 @Serializable data class NotificationDetailRoute(val notificationId: String)
 @Serializable data object OnboardingRoute
-@Serializable data object SettingsRoute

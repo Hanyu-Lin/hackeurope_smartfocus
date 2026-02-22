@@ -45,7 +45,7 @@ class FocusModeTile : TileService() {
             val activeModeId = entryPoint.settingsRepository().activeFocusModeId.first()
             val controller = entryPoint.focusModeController()
             if (activeModeId != null) {
-                controller.deactivate()
+                controller.deactivateAll()
                 updateTileState(false)
             } else {
                 // Activate first available mode

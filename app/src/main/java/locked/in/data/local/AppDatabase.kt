@@ -24,7 +24,7 @@ import locked.`in`.data.local.entity.NotificationRecordFts
         BundleMapEntryEntity::class,
         NotificationBundleEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 @TypeConverters(Converters::class)

@@ -6,14 +6,16 @@ import locked.`in`.domain.model.FocusMode
 
 interface FocusModeRepository {
     fun observeAll(): Flow<List<FocusMode>>
-    fun observeActive(): Flow<FocusMode?>
+    fun observeActive(): Flow<List<FocusMode>>
+    fun observeById(id: String): Flow<FocusMode?>
     suspend fun getById(id: String): FocusMode?
-    suspend fun getActive(): FocusMode?
+    suspend fun getActive(): List<FocusMode>
     suspend fun insert(mode: FocusMode)
     suspend fun update(mode: FocusMode)
     suspend fun deleteById(id: String)
     suspend fun activate(id: String)
     suspend fun deactivate()
+    suspend fun deactivateMode(id: String)
     suspend fun getRulesForMode(focusModeId: String): List<FilterRule>
     fun observeRulesForMode(focusModeId: String): Flow<List<FilterRule>>
     suspend fun insertRule(rule: FilterRule)

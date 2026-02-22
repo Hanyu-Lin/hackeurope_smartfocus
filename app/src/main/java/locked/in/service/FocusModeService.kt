@@ -17,15 +17,16 @@ class FocusModeService : Service() {
     companion object {
         const val ACTION_START = "locked.in.action.START_FOCUS"
         const val ACTION_STOP = "locked.in.action.STOP_FOCUS"
-        const val EXTRA_MODE_NAME = "mode_name"
+        const val EXTRA_MODE_NAMES = "mode_names"
         private const val NOTIFICATION_ID = 1001
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                val modeName = intent.getStringExtra(EXTRA_MODE_NAME) ?: "Focus"
-                val notification = buildFocusNotification(modeName)
+                val modeNamesRaw = intent.getStringExtra(EXTRA_MODE_NAMES) ?: "Focus"
+                val modeNames = modeNamesRaw.split(",").filter { it.isNotBlank() }
+                val notification = buildFocusNotification(modeNames)
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
             }
             ACTION_STOP -> {
@@ -36,7 +37,13 @@ class FocusModeService : Service() {
         return START_NOT_STICKY
     }
 
-    private fun buildFocusNotification(modeName: String): Notification {
+    private fun buildFocusNotification(modeNames: List<String>): Notification {
+        val title = if (modeNames.size == 1) {
+            "${modeNames.first()} Mode Active"
+        } else {
+            "${modeNames.size} focus modes active"
+        }
+
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
         }
@@ -51,7 +58,7 @@ class FocusModeService : Service() {
 
         return NotificationCompat.Builder(this, NotificationChannels.FOCUS_MODE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
-            .setContentTitle("$modeName Mode Active")
+            .setContentTitle(title)
             .setContentText("Filtering notifications. Tap to open SmartFocus.")
             .setContentIntent(openAppPendingIntent)
             .addAction(0, "Stop Focus", stopPendingIntent)

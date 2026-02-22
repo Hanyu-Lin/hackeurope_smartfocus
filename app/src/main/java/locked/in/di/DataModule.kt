@@ -2,6 +2,8 @@ package locked.`in`.di
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import dagger.Binds
 import dagger.Module
 import dagger.Provides
@@ -28,6 +30,13 @@ import javax.inject.Singleton
 @InstallIn(SingletonComponent::class)
 object DataModule {
 
+    private val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE focus_modes ADD COLUMN timerEnabled INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("ALTER TABLE focus_modes ADD COLUMN timerDurationMinutes INTEGER NOT NULL DEFAULT 25")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -35,7 +44,7 @@ object DataModule {
             context,
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
-        ).fallbackToDestructiveMigration().build()
+        ).addMigrations(MIGRATION_2_3).fallbackToDestructiveMigration().build()
     }
 
     @Provides

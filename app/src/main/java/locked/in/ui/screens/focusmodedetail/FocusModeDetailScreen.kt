@@ -235,6 +235,17 @@ fun FocusModeDetailScreen(
                 }
             }
 
+            // Timer section
+            item {
+                TimerSection(
+                    timerEnabled = mode.timerEnabled,
+                    timerDurationMinutes = mode.timerDurationMinutes,
+                    enabled = !mode.scheduleEnabled,
+                    onToggleTimer = { viewModel.toggleTimerEnabled() },
+                    onDurationChanged = { viewModel.updateTimerDuration(it) }
+                )
+            }
+
             // Schedule section
             item {
                 ScheduleSection(
@@ -242,6 +253,7 @@ fun FocusModeDetailScreen(
                     scheduleDays = mode.scheduleDays,
                     scheduleStartMinute = mode.scheduleStartMinute,
                     scheduleEndMinute = mode.scheduleEndMinute,
+                    enabled = !mode.timerEnabled,
                     onToggleSchedule = { viewModel.toggleScheduleEnabled() },
                     onDaysChanged = { viewModel.updateScheduleDays(it) },
                     onStartTimeChanged = { h, m -> viewModel.updateScheduleStartTime(h, m) },
@@ -458,6 +470,7 @@ private fun ScheduleSection(
     scheduleDays: Set<DayOfWeek>,
     scheduleStartMinute: Int,
     scheduleEndMinute: Int,
+    enabled: Boolean = true,
     onToggleSchedule: () -> Unit,
     onDaysChanged: (Set<DayOfWeek>) -> Unit,
     onStartTimeChanged: (Int, Int) -> Unit,
@@ -480,7 +493,7 @@ private fun ScheduleSection(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-            Switch(checked = scheduleEnabled, onCheckedChange = { onToggleSchedule() })
+            Switch(checked = scheduleEnabled, onCheckedChange = { onToggleSchedule() }, enabled = enabled)
         }
 
         if (scheduleEnabled) {
@@ -549,6 +562,106 @@ private fun ScheduleSection(
             onDismiss = { showEndPicker = false }
         )
     }
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun TimerSection(
+    timerEnabled: Boolean,
+    timerDurationMinutes: Int,
+    enabled: Boolean = true,
+    onToggleTimer: () -> Unit,
+    onDurationChanged: (Int) -> Unit
+) {
+    var showCustomDialog by remember { mutableStateOf(false) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Timer", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Auto-deactivate after a set duration",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Switch(checked = timerEnabled, onCheckedChange = { onToggleTimer() }, enabled = enabled)
+        }
+
+        if (timerEnabled) {
+            Text("Duration", style = MaterialTheme.typography.labelMedium)
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(25, 45, 60, 90).forEach { minutes ->
+                    FilterChip(
+                        selected = timerDurationMinutes == minutes,
+                        onClick = { onDurationChanged(minutes) },
+                        label = { Text("${minutes}m") }
+                    )
+                }
+                FilterChip(
+                    selected = listOf(25, 45, 60, 90).none { it == timerDurationMinutes },
+                    onClick = { showCustomDialog = true },
+                    label = {
+                        Text(
+                            if (listOf(25, 45, 60, 90).none { it == timerDurationMinutes })
+                                "Custom (${timerDurationMinutes}m)"
+                            else
+                                "Custom"
+                        )
+                    }
+                )
+            }
+        }
+    }
+
+    if (showCustomDialog) {
+        CustomDurationDialog(
+            initialMinutes = timerDurationMinutes,
+            onConfirm = {
+                onDurationChanged(it)
+                showCustomDialog = false
+            },
+            onDismiss = { showCustomDialog = false }
+        )
+    }
+}
+
+@Composable
+private fun CustomDurationDialog(
+    initialMinutes: Int,
+    onConfirm: (Int) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var text by remember { mutableStateOf(initialMinutes.toString()) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Custom Duration") },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { text = it.filter { c -> c.isDigit() } },
+                label = { Text("Minutes") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(
+                onClick = {
+                    val minutes = text.toIntOrNull()
+                    if (minutes != null && minutes > 0) onConfirm(minutes)
+                }
+            ) { Text("OK") }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text("Cancel") }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

@@ -15,4 +15,8 @@ interface SettingsRepository {
 
     val scheduleOverrideModeId: Flow<String?>
     suspend fun setScheduleOverrideModeId(id: String?)
+
+    val focusTimerEndTimes: Flow<Map<String, Long>>
+    suspend fun setFocusTimerEndTime(modeId: String, endTime: Long?)
+    suspend fun clearAllTimerEndTimes()
 }

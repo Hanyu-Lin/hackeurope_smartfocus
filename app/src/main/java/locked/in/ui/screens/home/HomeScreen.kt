@@ -13,25 +13,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DoNotDisturb
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -45,7 +39,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -57,7 +50,6 @@ fun HomeScreen(
     onNavigateToSearch: () -> Unit,
     onNavigateToFocusModeDetail: (String) -> Unit,
     onNavigateToDigest: () -> Unit,
-    onNavigateToSettings: () -> Unit,
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -100,12 +92,7 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("SmartFocus") },
-                actions = {
-                    IconButton(onClick = onNavigateToSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings")
-                    }
-                }
+                title = { Text("SmartFocus") }
             )
         },
         bottomBar = {
@@ -138,6 +125,8 @@ fun HomeScreen(
                 }
             }
             is HomeUiState.Success -> {
+                val activeModeIds = state.activeModes.map { it.id }.toSet()
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxSize()
@@ -146,84 +135,6 @@ fun HomeScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     item { Spacer(Modifier.height(4.dp)) }
-
-                    // Hero card for active mode
-                    if (state.activeMode != null) {
-                        item {
-                            ElevatedCard(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.elevatedCardColors(
-                                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                                )
-                            ) {
-                                Column(Modifier.padding(20.dp)) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Icon(
-                                            Icons.Default.DoNotDisturb,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                        Text(
-                                            "Focus Active",
-                                            style = MaterialTheme.typography.labelLarge,
-                                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                                        )
-                                    }
-                                    Spacer(Modifier.height(8.dp))
-                                    Text(
-                                        state.activeMode.name,
-                                        style = MaterialTheme.typography.headlineMedium,
-                                        fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
-                                    Spacer(Modifier.height(4.dp))
-                                    Text(
-                                        "${state.activeMode.rules.size} rules active",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f)
-                                    )
-                                    Spacer(Modifier.height(16.dp))
-                                    Button(
-                                        onClick = { viewModel.toggleMode(state.activeMode.id) },
-                                        colors = ButtonDefaults.buttonColors(
-                                            containerColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                            contentColor = MaterialTheme.colorScheme.primaryContainer
-                                        ),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text("End Session")
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    // Stat row
-                    item {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            StatCard(
-                                label = "Suppressed",
-                                count = state.suppressedCount,
-                                modifier = Modifier.weight(1f)
-                            )
-                            StatCard(
-                                label = "Allowed",
-                                count = state.allowedCount,
-                                modifier = Modifier.weight(1f)
-                            )
-                            StatCard(
-                                label = "Bundled",
-                                count = state.bundledCount,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
 
                     // Empty state or focus mode list
                     if (state.focusModes.isEmpty()) {
@@ -276,9 +187,10 @@ fun HomeScreen(
                         items(state.focusModes) { mode ->
                             FocusModeCard(
                                 mode = mode,
-                                isActive = state.activeMode?.id == mode.id,
+                                isActive = mode.id in activeModeIds,
                                 onToggle = { viewModel.toggleMode(mode.id) },
-                                onClick = { onNavigateToFocusModeDetail(mode.id) }
+                                onClick = { onNavigateToFocusModeDetail(mode.id) },
+                                timerEndTime = state.timerEndTimes[mode.id]
                             )
                         }
                     }
@@ -286,31 +198,6 @@ fun HomeScreen(
                     item { Spacer(Modifier.height(8.dp)) }
                 }
             }
-        }
-    }
-}
-
-@Composable
-private fun StatCard(
-    label: String,
-    count: Int,
-    modifier: Modifier = Modifier
-) {
-    OutlinedCard(modifier = modifier) {
-        Column(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Text(
-                count.toString(),
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
         }
     }
 }

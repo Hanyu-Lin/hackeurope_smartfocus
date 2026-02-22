@@ -11,5 +11,7 @@ data class FocusMode(
     val scheduleEnabled: Boolean = false,
     val scheduleDays: Set<DayOfWeek> = emptySet(),
     val scheduleStartMinute: Int = 0,
-    val scheduleEndMinute: Int = 0
+    val scheduleEndMinute: Int = 0,
+    val timerEnabled: Boolean = false,
+    val timerDurationMinutes: Int = 25
 )

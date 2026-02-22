@@ -21,11 +21,17 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.delay
 import locked.`in`.domain.model.FocusMode
 import java.time.DayOfWeek
 import java.time.format.TextStyle
@@ -37,7 +43,8 @@ fun FocusModeCard(
     isActive: Boolean,
     onToggle: () -> Unit,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    timerEndTime: Long? = null
 ) {
     Card(
         modifier = modifier.fillMaxWidth().clickable { onClick() },
@@ -105,9 +112,42 @@ fun FocusModeCard(
                         else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+                if (isActive && timerEndTime != null && timerEndTime > System.currentTimeMillis()) {
+                    CountdownText(
+                        timerEndTime = timerEndTime,
+                        isActive = true
+                    )
+                }
             }
             Switch(checked = isActive, onCheckedChange = { onToggle() })
         }
+    }
+}
+
+@Composable
+private fun CountdownText(timerEndTime: Long, isActive: Boolean) {
+    var remainingMs by remember(timerEndTime) {
+        mutableLongStateOf(timerEndTime - System.currentTimeMillis())
+    }
+
+    LaunchedEffect(timerEndTime) {
+        while (remainingMs > 0) {
+            delay(1000)
+            remainingMs = timerEndTime - System.currentTimeMillis()
+        }
+    }
+
+    if (remainingMs > 0) {
+        val totalSeconds = remainingMs / 1000
+        val minutes = totalSeconds / 60
+        val seconds = totalSeconds % 60
+        Text(
+            text = String.format("%d:%02d remaining", minutes, seconds),
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.Medium,
+            color = if (isActive) MaterialTheme.colorScheme.onPrimaryContainer
+            else MaterialTheme.colorScheme.onSurfaceVariant
+        )
     }
 }
 

@@ -57,4 +57,48 @@ class SettingsRepositoryImpl @Inject constructor(
             else prefs.remove(PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID)
         }
     }
+
+    override val focusTimerEndTimes: Flow<Map<String, Long>> =
+        dataStore.data.map { prefs ->
+            val raw = prefs[PreferenceKeys.FOCUS_TIMER_END_TIMES] ?: return@map emptyMap()
+            parseTimerEndTimes(raw)
+        }
+
+    override suspend fun setFocusTimerEndTime(modeId: String, endTime: Long?) {
+        dataStore.edit { prefs ->
+            val current = parseTimerEndTimes(prefs[PreferenceKeys.FOCUS_TIMER_END_TIMES] ?: "")
+                .toMutableMap()
+            if (endTime != null) {
+                current[modeId] = endTime
+            } else {
+                current.remove(modeId)
+            }
+            if (current.isEmpty()) {
+                prefs.remove(PreferenceKeys.FOCUS_TIMER_END_TIMES)
+            } else {
+                prefs[PreferenceKeys.FOCUS_TIMER_END_TIMES] = serializeTimerEndTimes(current)
+            }
+        }
+    }
+
+    override suspend fun clearAllTimerEndTimes() {
+        dataStore.edit { prefs ->
+            prefs.remove(PreferenceKeys.FOCUS_TIMER_END_TIMES)
+        }
+    }
+
+    private fun parseTimerEndTimes(raw: String): Map<String, Long> {
+        if (raw.isBlank()) return emptyMap()
+        return raw.split(",").mapNotNull { entry ->
+            val parts = entry.split(":", limit = 2)
+            if (parts.size == 2) {
+                val id = parts[0]
+                val ts = parts[1].toLongOrNull()
+                if (ts != null) id to ts else null
+            } else null
+        }.toMap()
+    }
+
+    private fun serializeTimerEndTimes(map: Map<String, Long>): String =
+        map.entries.joinToString(",") { "${it.key}:${it.value}" }
 }

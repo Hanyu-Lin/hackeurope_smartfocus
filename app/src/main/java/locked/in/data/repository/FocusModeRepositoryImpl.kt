@@ -1,6 +1,7 @@
 package locked.`in`.data.repository
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import locked.`in`.data.local.dao.FilterRuleDao
 import locked.`in`.data.local.dao.FocusModeDao
@@ -22,15 +23,31 @@ class FocusModeRepositoryImpl @Inject constructor(
 ) : FocusModeRepository {
 
     override fun observeAll(): Flow<List<FocusMode>> =
-        focusModeDao.observeAll().map { entities ->
+        combine(
+            focusModeDao.observeAll(),
+            filterRuleDao.observeAll()
+        ) { entities, allRules ->
+            val rulesByMode = allRules.groupBy { it.focusModeId }
             entities.map { entity ->
-                val rules = filterRuleDao.getByFocusModeId(entity.id).map { it.toDomain() }
+                val rules = (rulesByMode[entity.id] ?: emptyList()).map { it.toDomain() }
                 entity.toDomain(rules)
             }
         }
 
-    override fun observeActive(): Flow<FocusMode?> =
-        focusModeDao.observeActive().map { entity ->
+    override fun observeActive(): Flow<List<FocusMode>> =
+        combine(
+            focusModeDao.observeActiveModes(),
+            filterRuleDao.observeAll()
+        ) { entities, allRules ->
+            val rulesByMode = allRules.groupBy { it.focusModeId }
+            entities.map { entity ->
+                val rules = (rulesByMode[entity.id] ?: emptyList()).map { it.toDomain() }
+                entity.toDomain(rules)
+            }
+        }
+
+    override fun observeById(id: String): Flow<FocusMode?> =
+        focusModeDao.observeById(id).map { entity ->
             entity?.let {
                 val rules = filterRuleDao.getByFocusModeId(it.id).map { r -> r.toDomain() }
                 it.toDomain(rules)
@@ -43,10 +60,11 @@ class FocusModeRepositoryImpl @Inject constructor(
         return entity.toDomain(rules)
     }
 
-    override suspend fun getActive(): FocusMode? {
-        val entity = focusModeDao.getActive() ?: return null
-        val rules = filterRuleDao.getByFocusModeId(entity.id).map { it.toDomain() }
-        return entity.toDomain(rules)
+    override suspend fun getActive(): List<FocusMode> {
+        return focusModeDao.getActiveModes().map { entity ->
+            val rules = filterRuleDao.getByFocusModeId(entity.id).map { it.toDomain() }
+            entity.toDomain(rules)
+        }
     }
 
     override suspend fun insert(mode: FocusMode) {
@@ -62,12 +80,15 @@ class FocusModeRepositoryImpl @Inject constructor(
     }
 
     override suspend fun activate(id: String) {
-        focusModeDao.deactivateAll()
         focusModeDao.activate(id)
     }
 
     override suspend fun deactivate() {
         focusModeDao.deactivateAll()
+    }
+
+    override suspend fun deactivateMode(id: String) {
+        focusModeDao.deactivateMode(id)
     }
 
     override suspend fun getRulesForMode(focusModeId: String): List<FilterRule> =
@@ -104,7 +125,9 @@ class FocusModeRepositoryImpl @Inject constructor(
         scheduleEnabled = scheduleEnabled,
         scheduleDays = scheduleDays.toDayOfWeekSet(),
         scheduleStartMinute = scheduleStartMinute,
-        scheduleEndMinute = scheduleEndMinute
+        scheduleEndMinute = scheduleEndMinute,
+        timerEnabled = timerEnabled,
+        timerDurationMinutes = timerDurationMinutes
     )
 
     private fun FocusMode.toEntity() = FocusModeEntity(
@@ -112,7 +135,9 @@ class FocusModeRepositoryImpl @Inject constructor(
         scheduleEnabled = scheduleEnabled,
         scheduleDays = scheduleDays.toDaysString(),
         scheduleStartMinute = scheduleStartMinute,
-        scheduleEndMinute = scheduleEndMinute
+        scheduleEndMinute = scheduleEndMinute,
+        timerEnabled = timerEnabled,
+        timerDurationMinutes = timerDurationMinutes
     )
 
     private fun String.toDayOfWeekSet(): Set<DayOfWeek> {

@@ -3,12 +3,17 @@ package locked.`in`.service
 import android.content.Context
 import android.content.Intent
 import android.util.Log
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.workDataOf
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.first
 import locked.`in`.data.repository.BundleRepository
 import locked.`in`.data.repository.FocusModeRepository
 import locked.`in`.data.repository.SettingsRepository
 import java.time.LocalDateTime
+import java.util.concurrent.TimeUnit
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,38 +33,76 @@ class FocusModeController @Inject constructor(
 
     suspend fun activate(modeId: String) {
         focusModeRepository.activate(modeId)
-        settingsRepository.setActiveFocusModeId(modeId)
         settingsRepository.setFocusSessionStartTime(System.currentTimeMillis())
 
         val mode = focusModeRepository.getById(modeId)
-        val intent = Intent(context, FocusModeService::class.java).apply {
-            action = FocusModeService.ACTION_START
-            putExtra(FocusModeService.EXTRA_MODE_NAME, mode?.name ?: "Focus")
+
+        // If timer is enabled, schedule auto-deactivation for this mode
+        if (mode != null && mode.timerEnabled) {
+            val endTime = System.currentTimeMillis() + mode.timerDurationMinutes * 60_000L
+            settingsRepository.setFocusTimerEndTime(modeId, endTime)
+
+            val workRequest = OneTimeWorkRequestBuilder<TimerExpiryWorker>()
+                .setInputData(workDataOf(TimerExpiryWorker.KEY_MODE_ID to modeId))
+                .setInitialDelay(mode.timerDurationMinutes.toLong(), TimeUnit.MINUTES)
+                .build()
+            WorkManager.getInstance(context).enqueueUniqueWork(
+                TimerExpiryWorker.workName(modeId),
+                ExistingWorkPolicy.REPLACE,
+                workRequest
+            )
         }
-        context.startForegroundService(intent)
+
+        // Start/update foreground service with all active mode names
+        val activeModes = focusModeRepository.getActive()
+        val modeNames = activeModes.map { it.name }
+        startService(modeNames)
     }
 
-    suspend fun deactivate() {
-        val startTime = settingsRepository.focusSessionStartTime
+    suspend fun deactivateMode(modeId: String) {
+        // Cancel timer worker for this mode
+        WorkManager.getInstance(context).cancelUniqueWork(TimerExpiryWorker.workName(modeId))
+        settingsRepository.setFocusTimerEndTime(modeId, null)
+
+        focusModeRepository.deactivateMode(modeId)
+
+        val remaining = focusModeRepository.getActive()
+        if (remaining.isEmpty()) {
+            bundleNotificationPoster.clearAll()
+            bundleRepository.clearAllBundles()
+            settingsRepository.setActiveFocusModeId(null)
+            settingsRepository.setFocusSessionStartTime(null)
+            stopService()
+        } else {
+            // Update notification with remaining mode names
+            startService(remaining.map { it.name })
+        }
+    }
+
+    suspend fun deactivateAll() {
         bundleNotificationPoster.clearAll()
         bundleRepository.clearAllBundles()
+
+        // Cancel all timer workers
+        val timerEndTimes = settingsRepository.focusTimerEndTimes.first()
+        for (modeId in timerEndTimes.keys) {
+            WorkManager.getInstance(context).cancelUniqueWork(TimerExpiryWorker.workName(modeId))
+        }
+        settingsRepository.clearAllTimerEndTimes()
 
         focusModeRepository.deactivate()
         settingsRepository.setActiveFocusModeId(null)
         settingsRepository.setFocusSessionStartTime(null)
 
-        val intent = Intent(context, FocusModeService::class.java).apply {
-            action = FocusModeService.ACTION_STOP
-        }
-        context.startService(intent)
+        stopService()
     }
 
     suspend fun toggle(modeId: String) {
-        val active = focusModeRepository.getActive()
-        if (active != null && active.id == modeId) {
-            deactivate()
+        val activeModes = focusModeRepository.getActive()
+        val isThisModeActive = activeModes.any { it.id == modeId }
+        if (isThisModeActive) {
+            deactivateMode(modeId)
         } else {
-            if (active != null) deactivate()
             activate(modeId)
         }
         settingsRepository.setScheduleOverrideModeId(modeId)
@@ -71,29 +114,34 @@ class FocusModeController @Inject constructor(
      * on init so opening the app immediately syncs schedule state.
      */
     suspend fun evaluateSchedule() {
-        val now = LocalDateTime.now()
-        val currentDay = now.dayOfWeek
-        val currentMinute = now.hour * 60 + now.minute
+        // Check if any timer-based modes have expired (catches edge cases where worker didn't fire)
+        val timerEndTimes = settingsRepository.focusTimerEndTimes.first()
+        val now = System.currentTimeMillis()
+        for ((modeId, endTime) in timerEndTimes) {
+            if (now >= endTime) {
+                Log.d(TAG, "Timer expired (fallback check) for mode $modeId, deactivating")
+                deactivateMode(modeId)
+            }
+        }
+
+        val currentTime = LocalDateTime.now()
 
         val scheduledModes = focusModeRepository.getScheduledModes()
         val targetMode = scheduledModes.firstOrNull { mode ->
-            currentDay in mode.scheduleDays && isInWindow(currentMinute, mode.scheduleStartMinute, mode.scheduleEndMinute)
+            ScheduleUtil.isInScheduledWindow(mode, currentTime)
         }
 
-        val activeMode = focusModeRepository.getActive()
+        val activeModes = focusModeRepository.getActive()
         val overrideModeId = settingsRepository.scheduleOverrideModeId.first()
 
         if (overrideModeId != null) {
             val scheduleSaysActive = targetMode != null && targetMode.id == overrideModeId
-            val isCurrentlyActive = activeMode != null && activeMode.id == overrideModeId
+            val isCurrentlyActive = activeModes.any { it.id == overrideModeId }
 
             if (scheduleSaysActive == isCurrentlyActive) {
-                // Schedule agrees with current state — override served its purpose, clear it.
                 settingsRepository.setScheduleOverrideModeId(null)
                 Log.d(TAG, "Override cleared for $overrideModeId (converged)")
-                // State is already correct, nothing to do.
             } else {
-                // Schedule wants the opposite of what the user chose. Respect the user.
                 Log.d(TAG, "Respecting manual override for $overrideModeId")
             }
             return
@@ -101,46 +149,34 @@ class FocusModeController @Inject constructor(
 
         // No override — follow the schedule.
         if (targetMode != null) {
-            if (activeMode == null || activeMode.id != targetMode.id) {
+            val alreadyActive = activeModes.any { it.id == targetMode.id }
+            if (!alreadyActive) {
                 Log.d(TAG, "Activating scheduled mode: ${targetMode.name}")
                 activate(targetMode.id)
             }
         } else {
-            if (activeMode != null && activeMode.scheduleEnabled) {
-                Log.d(TAG, "Deactivating scheduled mode: ${activeMode.name}")
-                deactivate()
+            // Deactivate any schedule-based active modes that are outside their window
+            for (mode in activeModes) {
+                if (mode.scheduleEnabled) {
+                    Log.d(TAG, "Deactivating scheduled mode: ${mode.name}")
+                    deactivateMode(mode.id)
+                }
             }
         }
     }
 
-    /**
-     * Activation-only schedule check — called by the UI when schedule settings
-     * are edited. Will activate a mode if the new schedule matches now, but will
-     * never deactivate one (avoids jarring UX while the user is editing).
-     */
-    suspend fun evaluateScheduleForActivation() {
-        val now = LocalDateTime.now()
-        val currentDay = now.dayOfWeek
-        val currentMinute = now.hour * 60 + now.minute
-
-        val scheduledModes = focusModeRepository.getScheduledModes()
-        val targetMode = scheduledModes.firstOrNull { mode ->
-            currentDay in mode.scheduleDays && isInWindow(currentMinute, mode.scheduleStartMinute, mode.scheduleEndMinute)
+    private fun startService(modeNames: List<String>) {
+        val intent = Intent(context, FocusModeService::class.java).apply {
+            action = FocusModeService.ACTION_START
+            putExtra(FocusModeService.EXTRA_MODE_NAMES, modeNames.joinToString(","))
         }
-
-        val activeMode = focusModeRepository.getActive()
-        if (targetMode != null && (activeMode == null || activeMode.id != targetMode.id)) {
-            Log.d(TAG, "Activating scheduled mode from settings change: ${targetMode.name}")
-            activate(targetMode.id)
-        }
+        context.startForegroundService(intent)
     }
 
-    fun isInWindow(current: Int, start: Int, end: Int): Boolean {
-        return if (start <= end) {
-            current in start until end
-        } else {
-            // Wraps midnight (e.g., 22:00 - 06:00)
-            current >= start || current < end
+    private fun stopService() {
+        val intent = Intent(context, FocusModeService::class.java).apply {
+            action = FocusModeService.ACTION_STOP
         }
+        context.startService(intent)
     }
 }

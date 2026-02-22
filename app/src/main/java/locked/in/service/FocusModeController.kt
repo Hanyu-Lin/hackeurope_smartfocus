@@ -1,7 +1,10 @@
 package locked.`in`.service
 
+import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import android.util.Log
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
@@ -108,11 +111,7 @@ class FocusModeController @Inject constructor(
         settingsRepository.setScheduleOverrideModeId(modeId)
     }
 
-    /**
-     * Full schedule evaluation — can both activate and deactivate.
-     * Called by [ScheduleCheckerWorker] periodically and by the HomeViewModel
-     * on init so opening the app immediately syncs schedule state.
-     */
+    /** Evaluates schedule (activate/deactivate) and sets the next boundary alarm. */
     suspend fun evaluateSchedule() {
         // Check if any timer-based modes have expired (catches edge cases where worker didn't fire)
         val timerEndTimes = settingsRepository.focusTimerEndTimes.first()
@@ -137,31 +136,45 @@ class FocusModeController @Inject constructor(
         if (overrideModeId != null) {
             val scheduleSaysActive = targetMode != null && targetMode.id == overrideModeId
             val isCurrentlyActive = activeModes.any { it.id == overrideModeId }
-
-            if (scheduleSaysActive == isCurrentlyActive) {
-                settingsRepository.setScheduleOverrideModeId(null)
-                Log.d(TAG, "Override cleared for $overrideModeId (converged)")
-            } else {
+            if (scheduleSaysActive != isCurrentlyActive) {
                 Log.d(TAG, "Respecting manual override for $overrideModeId")
+                scheduleNextBoundaryAlarm()
+                return
             }
-            return
+            settingsRepository.setScheduleOverrideModeId(null)
         }
 
-        // No override — follow the schedule.
         if (targetMode != null) {
             val alreadyActive = activeModes.any { it.id == targetMode.id }
-            if (!alreadyActive) {
-                Log.d(TAG, "Activating scheduled mode: ${targetMode.name}")
-                activate(targetMode.id)
-            }
+            if (!alreadyActive) activate(targetMode.id)
         } else {
-            // Deactivate any schedule-based active modes that are outside their window
             for (mode in activeModes) {
-                if (mode.scheduleEnabled) {
-                    Log.d(TAG, "Deactivating scheduled mode: ${mode.name}")
-                    deactivateMode(mode.id)
-                }
+                if (mode.scheduleEnabled) deactivateMode(mode.id)
             }
+        }
+        scheduleNextBoundaryAlarm()
+    }
+
+    /** Schedules one exact alarm at the next start/end of any scheduled mode; cancels if none. */
+    suspend fun scheduleNextBoundaryAlarm() {
+        try {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as? AlarmManager ?: return
+            val scheduledModes = focusModeRepository.getScheduledModes()
+            val now = LocalDateTime.now()
+            val nextEpoch = ScheduleUtil.nextBoundaryEpochMillis(scheduledModes, now)
+            val intent = Intent(context, ScheduleBoundaryReceiver::class.java).apply {
+                action = ScheduleBoundaryReceiver.ACTION_SCHEDULE_BOUNDARY
+            }
+            val flags = PendingIntent.FLAG_UPDATE_CURRENT or
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) PendingIntent.FLAG_IMMUTABLE else 0
+            val pending = PendingIntent.getBroadcast(context, 0, intent, flags)
+            if (nextEpoch != null) {
+                alarmManager.setAlarmClock(AlarmManager.AlarmClockInfo(nextEpoch, pending), pending)
+            } else {
+                alarmManager.cancel(pending)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "scheduleNextBoundaryAlarm failed", e)
         }
     }
 

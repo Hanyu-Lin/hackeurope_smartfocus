@@ -24,10 +24,9 @@ class ScheduleCheckerWorker(
     }
 
     override suspend fun doWork(): Result {
-        val entryPoint = EntryPointAccessors.fromApplication(
-            applicationContext, WorkerEntryPoint::class.java
-        )
-        entryPoint.focusModeController().evaluateSchedule()
+        EntryPointAccessors.fromApplication(applicationContext, WorkerEntryPoint::class.java)
+            .focusModeController()
+            .evaluateSchedule()
         return Result.success()
     }
 }

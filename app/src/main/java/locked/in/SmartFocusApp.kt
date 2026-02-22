@@ -2,6 +2,8 @@ package locked.`in`
 
 import android.app.Application
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import dagger.hilt.android.HiltAndroidApp
@@ -33,14 +35,13 @@ class SmartFocusApp : Application() {
     }
 
     private fun scheduleScheduleChecker() {
-        val request = PeriodicWorkRequestBuilder<ScheduleCheckerWorker>(
-            15, TimeUnit.MINUTES
-        ).build()
-
-        WorkManager.getInstance(this).enqueueUniquePeriodicWork(
+        // Run once after a short delay so Hilt/DB are ready; AlarmManager then fires at each boundary.
+        WorkManager.getInstance(this).enqueueUniqueWork(
             ScheduleCheckerWorker.WORK_NAME,
-            ExistingPeriodicWorkPolicy.KEEP,
-            request
+            ExistingWorkPolicy.KEEP,
+            OneTimeWorkRequestBuilder<ScheduleCheckerWorker>()
+                .setInitialDelay(2, TimeUnit.SECONDS)
+                .build()
         )
     }
 }

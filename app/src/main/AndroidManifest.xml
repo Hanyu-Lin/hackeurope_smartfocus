@@ -67,6 +67,15 @@
             android:name=".service.StopFocusBroadcastReceiver"
             android:exported="false" />
 
+        <!-- Schedule boundary: alarm at each focus-mode schedule start/end -->
+        <receiver
+            android:name=".service.ScheduleBoundaryReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="locked.in.SCHEDULE_BOUNDARY" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>

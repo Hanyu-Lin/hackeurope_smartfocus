@@ -499,6 +499,13 @@ private fun ScheduleSection(
         if (scheduleEnabled) {
             // Day-of-week chips
             Text("Days", style = MaterialTheme.typography.labelMedium)
+            if (scheduleDays.isEmpty()) {
+                Text(
+                    "Select at least one day — mode won't activate until you do",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
             FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 DayOfWeek.entries.forEach { day ->
                     FilterChip(
@@ -522,7 +529,12 @@ private fun ScheduleSection(
                 }) { Text("Every day") }
             }
 
-            // Time pickers
+            // Time pickers (end time is exclusive: active until just before end)
+            Text(
+                "Active from start time up to (but not including) end time.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)

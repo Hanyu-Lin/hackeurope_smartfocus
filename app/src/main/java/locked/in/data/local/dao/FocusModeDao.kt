@@ -44,6 +44,6 @@ interface FocusModeDao {
     @Query("UPDATE focus_modes SET isActive = 1 WHERE id = :id")
     suspend fun activate(id: String)
 
-    @Query("SELECT * FROM focus_modes WHERE scheduleEnabled = 1")
+    @Query("SELECT * FROM focus_modes WHERE scheduleEnabled = 1 ORDER BY name ASC")
     suspend fun getScheduledModes(): List<FocusModeEntity>
 }

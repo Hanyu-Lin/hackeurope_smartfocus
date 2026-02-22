@@ -1,5 +1,10 @@
 package locked.`in`.ui.screens.focusmodedetail
 
+import android.Manifest
+import android.content.pm.PackageManager
+import android.provider.ContactsContract
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -16,6 +21,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Contacts
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -49,8 +55,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
+import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.launch
 import locked.`in`.domain.model.FilterRule
@@ -82,9 +90,35 @@ fun FocusModeDetailScreen(
     var ruleValue by remember { mutableStateOf("") }
     var selectedApp by remember { mutableStateOf<SupportedApp?>(null) }
     var selectedEffect by remember { mutableStateOf(RuleEffect.SUPPRESS) }
+    var selectedAction by remember { mutableStateOf(RuleAction.NONE) }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
+
+    val contactPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.PickContact()
+    ) { uri ->
+        if (uri != null) {
+            val cursor = context.contentResolver.query(
+                uri,
+                arrayOf(ContactsContract.Contacts.DISPLAY_NAME_PRIMARY),
+                null, null, null
+            )
+            cursor?.use {
+                if (it.moveToFirst()) {
+                    val name = it.getString(0)
+                    if (!name.isNullOrBlank()) ruleValue = name
+                }
+            }
+        }
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        if (granted) contactPickerLauncher.launch(null)
+    }
 
     if (showDeleteDialog) {
         AlertDialog(
@@ -119,6 +153,7 @@ fun FocusModeDetailScreen(
                 ruleValue = ruleValue,
                 selectedApp = selectedApp,
                 selectedEffect = selectedEffect,
+                selectedAction = selectedAction,
                 onTypeSelected = { type ->
                     selectedType = type
                     ruleValue = ""
@@ -130,7 +165,21 @@ fun FocusModeDetailScreen(
                     ruleValue = app.name
                 },
                 onCategorySelected = { ruleValue = it },
-                onEffectSelected = { selectedEffect = it },
+                onEffectSelected = { effect ->
+                    selectedEffect = effect
+                    if (effect == RuleEffect.SUPPRESS) selectedAction = RuleAction.NONE
+                },
+                onActionSelected = { selectedAction = it },
+                onPickContact = {
+                    val hasPermission = ContextCompat.checkSelfPermission(
+                        context, Manifest.permission.READ_CONTACTS
+                    ) == PackageManager.PERMISSION_GRANTED
+                    if (hasPermission) {
+                        contactPickerLauncher.launch(null)
+                    } else {
+                        permissionLauncher.launch(Manifest.permission.READ_CONTACTS)
+                    }
+                },
                 onSave = {
                     if (ruleValue.isNotBlank()) {
                         val existing = editingRule
@@ -139,11 +188,12 @@ fun FocusModeDetailScreen(
                                 existing.copy(
                                     type = selectedType,
                                     value = ruleValue,
-                                    effect = selectedEffect
+                                    effect = selectedEffect,
+                                    action = if (selectedEffect == RuleEffect.ALLOW) selectedAction else RuleAction.NONE
                                 )
                             )
                         } else {
-                            viewModel.addRule(selectedType, ruleValue, selectedEffect)
+                            viewModel.addRule(selectedType, ruleValue, selectedEffect, selectedAction)
                         }
                         scope.launch {
                             sheetState.hide()
@@ -174,6 +224,7 @@ fun FocusModeDetailScreen(
                 ruleValue = ""
                 selectedApp = null
                 selectedEffect = RuleEffect.SUPPRESS
+                selectedAction = RuleAction.NONE
                 showRuleSheet = true
             }) {
                 Icon(Icons.Default.Add, "Add Rule")
@@ -329,6 +380,7 @@ fun FocusModeDetailScreen(
                             ruleValue = rule.value
                             selectedApp = if (rule.type == RuleType.APP) SupportedApp.fromValue(rule.value) else null
                             selectedEffect = rule.effect
+                            selectedAction = rule.action
                             showRuleSheet = true
                         },
                         onDelete = { viewModel.deleteRule(rule.id) }
@@ -373,11 +425,14 @@ private fun RuleEditorSheetContent(
     ruleValue: String,
     selectedApp: SupportedApp?,
     selectedEffect: RuleEffect,
+    selectedAction: RuleAction,
     onTypeSelected: (RuleType) -> Unit,
     onValueChanged: (String) -> Unit,
     onAppSelected: (SupportedApp) -> Unit,
     onCategorySelected: (String) -> Unit,
     onEffectSelected: (RuleEffect) -> Unit,
+    onActionSelected: (RuleAction) -> Unit,
+    onPickContact: () -> Unit,
     onSave: () -> Unit
 ) {
     val effectVerb = if (selectedEffect == RuleEffect.SUPPRESS) "suppressed" else "allowed through"
@@ -422,6 +477,28 @@ private fun RuleEditorSheetContent(
             }
         }
 
+        // Action selector — only shown for ALLOW rules
+        if (selectedEffect == RuleEffect.ALLOW) {
+            Column {
+                Text("Delivery Action", style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    RuleAction.entries.forEach { action ->
+                        FilterChip(
+                            selected = selectedAction == action,
+                            onClick = { onActionSelected(action) },
+                            label = { Text(actionLabel(action)) }
+                        )
+                    }
+                }
+                Text(
+                    actionDescription(selectedAction),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
         when (selectedType) {
             RuleType.APP -> AppDropdown(
                 selectedApp = selectedApp,
@@ -442,14 +519,27 @@ private fun RuleEditorSheetContent(
                 )
             }
             RuleType.CONTACT -> {
-                OutlinedTextField(
-                    value = ruleValue,
-                    onValueChange = onValueChanged,
-                    label = { Text("Contact name") },
-                    supportingText = { Text("Notifications from this sender will be $effectVerb") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = onPickContact,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Contacts, contentDescription = null)
+                        Spacer(Modifier.height(4.dp))
+                        Text(if (ruleValue.isBlank()) "Pick Contact" else "Change Contact")
+                    }
+                    if (ruleValue.isNotBlank()) {
+                        Text(
+                            ruleValue,
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                    }
+                    Text(
+                        "Notifications from this sender will be $effectVerb",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
 
@@ -461,6 +551,20 @@ private fun RuleEditorSheetContent(
             Text(if (isEditing) "Update Rule" else "Add Rule")
         }
     }
+}
+
+private fun actionLabel(action: RuleAction): String = when (action) {
+    RuleAction.NONE -> "Default"
+    RuleAction.BUZZ -> "Vibrate"
+    RuleAction.ALARM -> "Alarm"
+    RuleAction.SILENT -> "Silent"
+}
+
+private fun actionDescription(action: RuleAction): String = when (action) {
+    RuleAction.NONE -> "Deliver with system default behavior"
+    RuleAction.BUZZ -> "Trigger a haptic vibration on delivery"
+    RuleAction.ALARM -> "Play an alarm sound on delivery"
+    RuleAction.SILENT -> "Force silent delivery regardless of system volume"
 }
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)

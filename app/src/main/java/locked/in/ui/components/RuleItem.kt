@@ -25,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import locked.`in`.domain.model.FilterRule
+import locked.`in`.domain.model.RuleAction
 import locked.`in`.domain.model.RuleEffect
 import locked.`in`.domain.model.RuleType
 import locked.`in`.domain.model.SupportedApp
@@ -41,14 +42,23 @@ private fun ruleDescription(rule: FilterRule): String {
         RuleEffect.SUPPRESS -> "Suppress"
         RuleEffect.ALLOW -> "Allow"
     }
+    val actionSuffix = if (rule.effect == RuleEffect.ALLOW && rule.action != RuleAction.NONE) {
+        val actionName = when (rule.action) {
+            RuleAction.BUZZ -> "Vibrate"
+            RuleAction.ALARM -> "Alarm"
+            RuleAction.SILENT -> "Silent"
+            RuleAction.NONE -> ""
+        }
+        " + $actionName"
+    } else ""
     return when (rule.type) {
         RuleType.APP -> {
             val app = SupportedApp.fromValue(rule.value)
-            "$verb ${app?.displayName ?: rule.value}"
+            "$verb ${app?.displayName ?: rule.value}$actionSuffix"
         }
-        RuleType.KEYWORD -> "$verb keyword: ${rule.value}"
-        RuleType.CONTACT -> "$verb contact: ${rule.value}"
-        RuleType.CATEGORY -> "$verb category: ${rule.value}"
+        RuleType.KEYWORD -> "$verb keyword: ${rule.value}$actionSuffix"
+        RuleType.CONTACT -> "$verb contact: ${rule.value}$actionSuffix"
+        RuleType.CATEGORY -> "$verb category: ${rule.value}$actionSuffix"
     }
 }
 

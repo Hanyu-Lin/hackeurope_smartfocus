@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,7 +17,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
@@ -26,21 +26,18 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -50,181 +47,159 @@ import locked.`in`.ui.components.NotificationCard
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun SearchScreen(
-    onNavigateBack: () -> Unit,
     onNavigateToDetail: (String) -> Unit,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val totalInDataset = uiState.resultCount
     val outcomeCounts = uiState.outcomeCounts
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Notifications") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(contentPadding)
+    ) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+        ) {
+            OutlinedTextField(
+                value = uiState.query,
+                onValueChange = { viewModel.updateQuery(it) },
+                placeholder = {
+                    Text(
+                        "Search by app, title, or text\u2026",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                    )
+                },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                leadingIcon = {
+                    Icon(
+                        Icons.Default.Search,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                },
+                trailingIcon = {
+                    if (uiState.query.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.updateQuery("") }) {
+                            Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                        }
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                shape = RoundedCornerShape(16.dp),
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color.Transparent,
+                    unfocusedBorderColor = Color.Transparent,
+                    focusedContainerColor = Color.Transparent,
+                    unfocusedContainerColor = Color.Transparent
                 )
             )
         }
-    ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding)
-        ) {
-            // Search field — prominent, rounded
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
-            ) {
-                OutlinedTextField(
-                    value = uiState.query,
-                    onValueChange = { viewModel.updateQuery(it) },
-                    placeholder = {
-                        Text(
-                            "Search by app, title, or text…",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
-                        )
-                    },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                    leadingIcon = {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    },
-                    trailingIcon = {
-                        if (uiState.query.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.updateQuery("") }) {
-                                Icon(Icons.Default.Clear, contentDescription = "Clear search")
-                            }
-                        }
-                    },
-                    shape = RoundedCornerShape(16.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
-                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
-                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent
-                    )
-                )
-            }
 
-            // Filter chips with counts
-            FlowRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                val allCount = totalInDataset
+        FlowRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            val allCount = totalInDataset
+            FilterChip(
+                selected = uiState.outcomeFilter == null,
+                onClick = { viewModel.setOutcomeFilter(null) },
+                label = {
+                    Text(
+                        if (allCount > 0) "All ($allCount)" else "All",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                }
+            )
+            NotificationOutcome.entries.forEach { outcome ->
+                val count = outcomeCounts[outcome.name] ?: 0
                 FilterChip(
-                    selected = uiState.outcomeFilter == null,
-                    onClick = { viewModel.setOutcomeFilter(null) },
+                    selected = uiState.outcomeFilter == outcome.name,
+                    onClick = {
+                        viewModel.setOutcomeFilter(
+                            if (uiState.outcomeFilter == outcome.name) null else outcome.name
+                        )
+                    },
                     label = {
                         Text(
-                            if (allCount > 0) "All ($allCount)" else "All",
+                            outcomeLabel(outcome) + if (count > 0) " ($count)" else "",
                             style = MaterialTheme.typography.labelMedium
                         )
                     }
                 )
-                NotificationOutcome.entries.forEach { outcome ->
-                    val count = outcomeCounts[outcome.name] ?: 0
-                    FilterChip(
-                        selected = uiState.outcomeFilter == outcome.name,
-                        onClick = {
-                            viewModel.setOutcomeFilter(
-                                if (uiState.outcomeFilter == outcome.name) null else outcome.name
-                            )
-                        },
-                        label = {
-                            Text(
-                                outcomeLabel(outcome) + if (count > 0) " ($count)" else "",
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
+            }
+        }
+
+        if (!uiState.isSearching) {
+            Text(
+                text = when {
+                    uiState.isBrowseMode -> "Recent"
+                    else -> "Results"
+                } + if (totalInDataset > 0) " \u00b7 ${uiState.results.size} shown" else "",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            )
+        }
+
+        when {
+            uiState.isSearching -> {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(24.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 2.dp
                     )
                 }
             }
 
-            // Section title + result count
-            if (!uiState.isSearching) {
-                Text(
-                    text = when {
-                        uiState.isBrowseMode -> "Recent"
-                        else -> "Results"
-                    } + if (totalInDataset > 0) " · ${uiState.results.size} shown" else "",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+            uiState.results.isEmpty() && uiState.isBrowseMode -> {
+                EmptyStateBrowse(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
                 )
             }
 
-            when {
-                uiState.isSearching -> {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(24.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(32.dp),
-                            strokeWidth = 2.dp
+            uiState.results.isEmpty() && !uiState.isBrowseMode -> {
+                EmptyStateNoResults(
+                    query = uiState.query,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                )
+            }
+
+            else -> {
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    items(
+                        items = uiState.results,
+                        key = { it.id }
+                    ) { record ->
+                        NotificationCard(
+                            record = record,
+                            onClick = { onNavigateToDetail(record.id) },
+                            modifier = Modifier.animateItem()
                         )
-                    }
-                }
-
-                uiState.results.isEmpty() && uiState.isBrowseMode -> {
-                    // No notifications at all
-                    EmptyStateBrowse(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
-                }
-
-                uiState.results.isEmpty() && !uiState.isBrowseMode -> {
-                    // Search returned nothing
-                    EmptyStateNoResults(
-                        query = uiState.query,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f)
-                    )
-                }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(
-                            items = uiState.results,
-                            key = { it.id }
-                        ) { record ->
-                            NotificationCard(
-                                record = record,
-                                onClick = { onNavigateToDetail(record.id) },
-                                modifier = Modifier.animateItem()
-                            )
-                        }
                     }
                 }
             }

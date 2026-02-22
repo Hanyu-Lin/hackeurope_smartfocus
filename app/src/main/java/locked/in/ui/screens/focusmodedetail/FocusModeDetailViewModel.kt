@@ -77,7 +77,7 @@ class FocusModeDetailViewModel @Inject constructor(
         viewModelScope.launch { repository.updatePriorityThreshold(modeId, threshold) }
     }
 
-    fun addRule(type: RuleType, value: String, effect: RuleEffect) {
+    fun addRule(type: RuleType, value: String, effect: RuleEffect, action: RuleAction) {
         viewModelScope.launch {
             val rule = FilterRule(
                 id = UUID.randomUUID().toString(),
@@ -85,7 +85,7 @@ class FocusModeDetailViewModel @Inject constructor(
                 type = type,
                 value = value,
                 effect = effect,
-                action = RuleAction.NONE
+                action = if (effect == RuleEffect.ALLOW) action else RuleAction.NONE
             )
             repository.insertRule(rule)
         }

@@ -3,6 +3,7 @@ package locked.`in`.ui.screens.home
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -14,25 +15,16 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Notifications
-import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.DeleteSweep
-import androidx.compose.material.icons.filled.Summarize
+import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -46,12 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import locked.`in`.ui.components.FocusModeCard
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    onNavigateToSearch: () -> Unit,
     onNavigateToFocusModeDetail: (String) -> Unit,
-    onNavigateToDigest: () -> Unit,
+    contentPadding: PaddingValues = PaddingValues(0.dp),
     viewModel: HomeViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -111,134 +101,102 @@ fun HomeScreen(
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("SmartFocus") }
-            )
-        },
-        bottomBar = {
-            NavigationBar {
-                NavigationBarItem(
-                    selected = true,
-                    onClick = { },
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                    label = { Text("Home") }
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = onNavigateToDigest,
-                    icon = { Icon(Icons.Default.Summarize, contentDescription = "Digest") },
-                    label = { Text("Digest") }
-                )
-                NavigationBarItem(
-                    selected = false,
-                    onClick = onNavigateToSearch,
-                    icon = { Icon(Icons.Default.Search, contentDescription = "Search") },
-                    label = { Text("Search") }
-                )
+    when (val state = uiState) {
+        is HomeUiState.Loading -> {
+            Box(Modifier.fillMaxSize().padding(contentPadding), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
         }
-    ) { padding ->
-        when (val state = uiState) {
-            is HomeUiState.Loading -> {
-                Box(Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
-                }
-            }
-            is HomeUiState.Success -> {
-                val activeModeIds = state.activeModes.map { it.id }.toSet()
+        is HomeUiState.Success -> {
+            val activeModeIds = state.activeModes.map { it.id }.toSet()
 
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                        .padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    item { Spacer(Modifier.height(4.dp)) }
+            LazyColumn(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(contentPadding)
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                item { Spacer(Modifier.height(4.dp)) }
 
-                    // Empty state or focus mode list
-                    if (state.focusModes.isEmpty()) {
-                        item {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 32.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Icon(
-                                    Icons.Default.Notifications,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(64.dp),
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                                )
-                                Spacer(Modifier.height(16.dp))
-                                Text(
-                                    "No Focus Modes",
-                                    style = MaterialTheme.typography.titleLarge,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    "Create your first focus mode to start filtering notifications intelligently",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    textAlign = TextAlign.Center
-                                )
-                                Spacer(Modifier.height(16.dp))
-                                Button(onClick = { showCreateDialog = true }) {
-                                    Text("Create Focus Mode")
-                                }
-                            }
-                        }
-                    } else {
-                        item {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text("Focus Modes", style = MaterialTheme.typography.titleMedium)
-                                TextButton(onClick = { showCreateDialog = true }) {
-                                    Text("+ New Mode")
-                                }
-                            }
-                        }
-
-                        items(state.focusModes) { mode ->
-                            FocusModeCard(
-                                mode = mode,
-                                isActive = mode.id in activeModeIds,
-                                onToggle = { viewModel.toggleMode(mode.id) },
-                                onClick = { onNavigateToFocusModeDetail(mode.id) },
-                                timerEndTime = state.timerEndTimes[mode.id]
-                            )
-                        }
-                    }
-
-                    // Temporary: clear data button (remove before release)
+                if (state.focusModes.isEmpty()) {
                     item {
-                        Spacer(Modifier.height(16.dp))
-                        TextButton(
-                            onClick = { showClearDataConfirm = true },
-                            modifier = Modifier.fillMaxWidth()
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 32.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
                             Icon(
-                                Icons.Default.DeleteSweep,
+                                Icons.Default.Notifications,
                                 contentDescription = null,
-                                modifier = Modifier.size(18.dp),
-                                tint = MaterialTheme.colorScheme.error
+                                modifier = Modifier.size(64.dp),
+                                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
                             )
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.height(16.dp))
                             Text(
-                                "Clear all data (dev)",
-                                color = MaterialTheme.colorScheme.error,
-                                style = MaterialTheme.typography.labelMedium
+                                "No Focus Modes",
+                                style = MaterialTheme.typography.titleLarge,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Create your first focus mode to start filtering notifications intelligently",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.Center
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            Button(onClick = { showCreateDialog = true }) {
+                                Text("Create Focus Mode")
+                            }
                         }
-                        Spacer(Modifier.height(8.dp))
                     }
+                } else {
+                    item {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Focus Modes", style = MaterialTheme.typography.titleMedium)
+                            TextButton(onClick = { showCreateDialog = true }) {
+                                Text("+ New Mode")
+                            }
+                        }
+                    }
+
+                    items(state.focusModes) { mode ->
+                        FocusModeCard(
+                            mode = mode,
+                            isActive = mode.id in activeModeIds,
+                            onToggle = { viewModel.toggleMode(mode.id) },
+                            onClick = { onNavigateToFocusModeDetail(mode.id) },
+                            timerEndTime = state.timerEndTimes[mode.id]
+                        )
+                    }
+                }
+
+                item {
+                    Spacer(Modifier.height(16.dp))
+                    TextButton(
+                        onClick = { showClearDataConfirm = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(
+                            Icons.Default.DeleteSweep,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp),
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "Clear all data (dev)",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         }

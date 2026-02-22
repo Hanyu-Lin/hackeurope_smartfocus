@@ -147,13 +147,14 @@ data class FocusMode(
 )
 
 // A single filter rule within a FocusMode
+// Rules are evaluated in insertion order within each type group.
 data class FilterRule(
     val id: String,
     val focusModeId: String,
     val type: RuleType,                    // APP, KEYWORD, CONTACT, CATEGORY
     val value: String,                     // packageName / keyword / contactId / category string
     val effect: RuleEffect,                // ALLOW, SUPPRESS
-    val action: RuleAction                 // NONE, BUZZ, ALARM, SILENT
+    val action: RuleAction                 // NONE, BUZZ, ALARM, SILENT (only applies when effect = ALLOW)
 )
 
 enum class RuleType { APP, KEYWORD, CONTACT, CATEGORY }
@@ -600,11 +601,15 @@ Focus modes are user-created profiles stored in Room. Only one mode can be activ
 
 ### Rule Evaluation Order
 
+Rules are evaluated by type priority, then by insertion order within the same type:
+
 1. `CATEGORY` rules — `call` and `system` evaluated first (always-allow candidates)
 2. `CONTACT` rules — whitelist pass-through for known senders
 3. `APP` rules — package-level allowlist / blocklist
 4. `KEYWORD` rules — urgency keywords or spam patterns in title/text
 5. No match → escalate to AI Classifier
+
+Within each type, ALLOW rules take priority over SUPPRESS rules. Among rules of the same type and effect, the first matching rule (by insertion order) wins.
 
 ### Rule Actions
 
@@ -853,7 +858,7 @@ All intercepted notifications are persisted to Room with FTS4 indexing, regardle
 
 Full-text search runs on `title`, `text`, and `rawPrompt` via Room FTS4. Attribute filters: app, outcome (ALLOWED / SUPPRESSED / BUNDLED), date range, priority score, `bundleId` (to view all notifications in a given bundle). Sort by timestamp (default) or priorityScore.
 
-Default retention: 30 days (configurable in Settings). CSV export of audit log available in Settings.
+Default retention: 30 days.
 
 ---
 
@@ -877,14 +882,13 @@ No model inference. Pure Kotlin string formatting.
 | Screen                     | Purpose                                                            |
 | -------------------------- | ------------------------------------------------------------------ |
 | `HomeScreen`               | Active focus mode toggle, current mode name, shortcut to digest    |
-| `FocusModeListScreen`      | List all focus modes, create / duplicate / delete                  |
+| `FocusModeListScreen`      | List all focus modes, create / delete                              |
 | `FocusModeDetailScreen`    | Edit mode name, sensitivity slider, manage rules list              |
 | `RuleEditorScreen`         | Create / edit a single rule: type, value, effect, action config    |
 | `DigestScreen`             | Grouped digest of suppressed notifications from last focus session |
 | `SearchScreen`             | Full-text + filtered search across full notification audit log     |
 | `NotificationDetailScreen` | Full detail view of a single persisted notification + raw prompt   |
 | `OnboardingScreen`         | Guide user to enable Notification Access in Settings               |
-| `SettingsScreen`           | Retention period, default action sounds, export audit log          |
 
 ---
 
@@ -910,7 +914,6 @@ No model inference. Pure Kotlin string formatting.
 - [ ] Wire real `NotificationModel` when teammates deliver it — no other code changes needed
 - [ ] `DigestGenerator` — template-based summary of SUPPRESSED + BUNDLED outcomes on focus mode end
 - [ ] `DigestScreen` + `SearchScreen` + `NotificationDetailScreen`
-- [ ] `SettingsScreen` — retention config, priority threshold slider, sound picker, CSV export
 
 ---
 
@@ -970,7 +973,7 @@ No model inference. Pure Kotlin string formatting.
 8. **Discord server vs. DM detection.** `isGroupConversation = true` for both server channels and group DMs. A `#` prefix in `conversationTitle` suggests a server channel — treat as a heuristic only.
 9. **`VibrationEffect` API differs across Android versions.** Use `VibrationEffect.createOneShot` for API 26+ with a graceful fallback for older targets.
 10. **Room FTS4 must be kept in sync manually.** Use a DAO wrapper that writes to both `NotificationRecord` and its FTS shadow table in a single transaction.
-11. **Priority threshold slider maps to `FocusMode.priorityThreshold` (0–10).** This controls the AI model's `priority` output, not the Rule Engine. Make the distinction clear in the UI.
+11. **Priority threshold slider maps to `FocusMode.priorityThreshold` (0–10).** This controls the AI model's `priority` output, not the Rule Engine. The slider lives on `FocusModeDetailScreen`.
 12. **Active Focus Mode must survive process death.** Persist the active mode ID to DataStore, not just in-memory ViewModel state.
 13. **`cancelNotification()` requires `sbn.key`.** You cannot reconstruct the key from package name + ID alone. Store `originalKey` on `ParsedNotification` and `NotificationBundle.soloSbnKey` at parse time.
 14. **`BundleMapEntry.centroid` is a `FloatArray` of size 1024.** Room cannot store `FloatArray` natively — use a `@TypeConverter` that serializes it to a `ByteArray` or a comma-delimited `String`. `ByteArray` is preferred for compactness (4 KB per row).

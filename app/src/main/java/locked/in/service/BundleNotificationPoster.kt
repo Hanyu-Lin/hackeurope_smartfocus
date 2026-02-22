@@ -10,7 +10,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import locked.`in`.R
-import locked.`in`.data.local.entity.NotificationBundleEntity
+import locked.`in`.data.local.entity.BundleMapEntryEntity
 import locked.`in`.data.repository.BundleRepository
 import locked.`in`.domain.model.ParsedNotification
 import javax.inject.Inject
@@ -34,46 +34,41 @@ class BundleNotificationPosterImpl @Inject constructor(
 
     private var nextNotificationId = 20_000
 
+    private fun hasLiveState(entry: BundleMapEntryEntity?): Boolean =
+        entry != null && !entry.notificationIds.isNullOrBlank()
+
     override suspend fun handleBundle(bundleId: String, parsed: ParsedNotification, recordId: String) {
         val existing = bundleRepository.getBundleByBundleId(bundleId)
         val groupKey = "bundle_$bundleId"
 
-        if (existing == null) {
-            // First notification in this bundle — post as solo child
+        if (existing == null || !hasLiveState(existing)) {
+            // Fallback: no live state (e.g. cleared or race). Set live columns and post solo.
             val postedId = nextNotificationId++
-            bundleRepository.insertBundle(
-                NotificationBundleEntity(
-                    bundleId = bundleId,
-                    bundleIndex = 0,
-                    packageName = parsed.packageName,
-                    appLabel = parsed.appLabel,
-                    notificationIds = Json.encodeToString(listOf(recordId)),
-                    soloSbnKey = parsed.originalKey,
-                    postedNotificationId = postedId,
-                    createdAt = parsed.timestamp,
-                    updatedAt = parsed.timestamp
-                )
+            bundleRepository.updateBundleLive(
+                bundleId,
+                parsed.appLabel,
+                Json.encodeToString(listOf(recordId)),
+                parsed.originalKey,
+                postedId,
+                null,
+                parsed.timestamp
             )
-            // Post solo notification preserving original content
             val notification = buildChildNotification(parsed, groupKey)
             notificationManager.notify(postedId, notification)
             return
         }
 
-        val existingIds: List<String> = Json.decodeFromString(existing.notificationIds)
+        val existingIds: List<String> = Json.decodeFromString(existing.notificationIds!!)
         val updatedIds = existingIds + recordId
-        val updatedBundle = existing.copy(
-            notificationIds = Json.encodeToString(updatedIds),
-            updatedAt = parsed.timestamp
-        )
-        bundleRepository.updateBundle(updatedBundle)
 
         if (existingIds.size == 1) {
-            // Transition solo → grouped: cancel solo, re-post first as child + new child + summary
-            notificationManager.cancel(existing.postedNotificationId)
+            // Transition solo → grouped: first notification was shown by system (we did not post), so only cancel our id if we had posted one
+            if (existing.postedNotificationId >= 0) {
+                notificationManager.cancel(existing.postedNotificationId)
+            }
 
             // Re-post first notification as grouped child
-            val firstParsed = parsedCache.get(existing.soloSbnKey)
+            val firstParsed = existing.soloSbnKey?.let { parsedCache.get(it) }
             if (firstParsed != null) {
                 val firstChildId = nextNotificationId++
                 val firstChild = buildChildNotification(firstParsed, groupKey)
@@ -85,21 +80,40 @@ class BundleNotificationPosterImpl @Inject constructor(
             val newChild = buildChildNotification(parsed, groupKey)
             notificationManager.notify(newChildId, newChild)
 
-            // Post group summary
-            val summaryId = existing.postedNotificationId // reuse the bundle's id for summary
-            val members = buildMemberList(existing.soloSbnKey, parsed)
-            val summary = buildSummaryNotification(updatedBundle, updatedIds.size, groupKey, members)
+            // Summary ID must be positive; solo-system path uses -1, so assign and persist now
+            val summaryId = if (existing.postedNotificationId >= 0) existing.postedNotificationId else nextNotificationId++
+            bundleRepository.updateBundleLive(
+                bundleId,
+                existing.appLabel,
+                Json.encodeToString(updatedIds),
+                existing.soloSbnKey,
+                summaryId,
+                existing.allowAction,
+                parsed.timestamp
+            )
+            val members = buildMemberList(existing.soloSbnKey!!, parsed)
+            val appLabel = existing.appLabel ?: parsed.appLabel
+            val summary = buildSummaryNotification(appLabel, updatedIds.size, groupKey, members)
             notificationManager.notify(summaryId, summary)
         } else {
             // Third+: post new child, update summary
+            bundleRepository.updateBundleLive(
+                bundleId,
+                existing.appLabel,
+                Json.encodeToString(updatedIds),
+                existing.soloSbnKey,
+                existing.postedNotificationId,
+                existing.allowAction,
+                parsed.timestamp
+            )
             val newChildId = nextNotificationId++
             val newChild = buildChildNotification(parsed, groupKey)
             notificationManager.notify(newChildId, newChild)
 
-            // Update summary in-place
             val summaryId = existing.postedNotificationId
             val members = listOf("${parsed.title}: ${parsed.text.take(60)}")
-            val summary = buildSummaryNotification(updatedBundle, updatedIds.size, groupKey, members)
+            val appLabel = existing.appLabel ?: parsed.appLabel
+            val summary = buildSummaryNotification(appLabel, updatedIds.size, groupKey, members)
             notificationManager.notify(summaryId, summary)
         }
     }
@@ -138,13 +152,14 @@ class BundleNotificationPosterImpl @Inject constructor(
     }
 
     private fun buildSummaryNotification(
-        bundle: NotificationBundleEntity,
+        appLabel: String,
         count: Int,
         groupKey: String,
         memberPreviewLines: List<String>
     ): android.app.Notification {
+        val title = "$appLabel \u00b7 $count notifications"
         val style = NotificationCompat.InboxStyle()
-            .setBigContentTitle("${bundle.appLabel} \u00b7 $count notifications")
+            .setBigContentTitle(title)
 
         for (line in memberPreviewLines.takeLast(5)) {
             style.addLine(line)
@@ -152,7 +167,7 @@ class BundleNotificationPosterImpl @Inject constructor(
 
         return NotificationCompat.Builder(context, NotificationChannels.BUNDLE_CHANNEL_ID)
             .setSmallIcon(R.drawable.ic_notif_default)
-            .setContentTitle("${bundle.appLabel} \u00b7 $count notifications")
+            .setContentTitle(title)
             .setContentText("$count bundled notifications")
             .setStyle(style)
             .setGroup(groupKey)

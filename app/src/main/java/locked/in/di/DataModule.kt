@@ -14,7 +14,6 @@ import locked.`in`.data.local.AppDatabase
 import locked.`in`.data.local.dao.BundleMapDao
 import locked.`in`.data.local.dao.FilterRuleDao
 import locked.`in`.data.local.dao.FocusModeDao
-import locked.`in`.data.local.dao.NotificationBundleDao
 import locked.`in`.data.local.dao.NotificationRecordDao
 import locked.`in`.data.repository.BundleRepository
 import locked.`in`.data.repository.BundleRepositoryImpl
@@ -43,6 +42,25 @@ object DataModule {
         }
     }
 
+    private val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE bundle_map ADD COLUMN appLabel TEXT")
+            db.execSQL("ALTER TABLE bundle_map ADD COLUMN notificationIds TEXT")
+            db.execSQL("ALTER TABLE bundle_map ADD COLUMN soloSbnKey TEXT")
+            db.execSQL("ALTER TABLE bundle_map ADD COLUMN postedNotificationId INTEGER NOT NULL DEFAULT -1")
+            db.execSQL("ALTER TABLE bundle_map ADD COLUMN allowAction TEXT")
+            db.execSQL("""
+                UPDATE bundle_map SET
+                    appLabel = (SELECT appLabel FROM notification_bundle WHERE notification_bundle.bundleId = bundle_map.bundleId),
+                    notificationIds = (SELECT notificationIds FROM notification_bundle WHERE notification_bundle.bundleId = bundle_map.bundleId),
+                    soloSbnKey = (SELECT soloSbnKey FROM notification_bundle WHERE notification_bundle.bundleId = bundle_map.bundleId),
+                    postedNotificationId = (SELECT postedNotificationId FROM notification_bundle WHERE notification_bundle.bundleId = bundle_map.bundleId)
+                WHERE bundleId IN (SELECT bundleId FROM notification_bundle)
+            """.trimIndent())
+            db.execSQL("DROP TABLE IF EXISTS notification_bundle")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -50,7 +68,7 @@ object DataModule {
             context,
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
-        ).addMigrations(MIGRATION_2_3, MIGRATION_3_4).fallbackToDestructiveMigration().build()
+        ).addMigrations(MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).fallbackToDestructiveMigration().build()
     }
 
     @Provides
@@ -69,9 +87,6 @@ object DataModule {
     @Singleton
     fun provideBundleMapDao(db: AppDatabase): BundleMapDao = db.bundleMapDao()
 
-    @Provides
-    @Singleton
-    fun provideNotificationBundleDao(db: AppDatabase): NotificationBundleDao = db.notificationBundleDao()
 }
 
 @Module

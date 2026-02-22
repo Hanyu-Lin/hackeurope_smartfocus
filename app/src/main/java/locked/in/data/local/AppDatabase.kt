@@ -6,12 +6,10 @@ import androidx.room.TypeConverters
 import locked.`in`.data.local.dao.BundleMapDao
 import locked.`in`.data.local.dao.FilterRuleDao
 import locked.`in`.data.local.dao.FocusModeDao
-import locked.`in`.data.local.dao.NotificationBundleDao
 import locked.`in`.data.local.dao.NotificationRecordDao
 import locked.`in`.data.local.entity.BundleMapEntryEntity
 import locked.`in`.data.local.entity.FilterRuleEntity
 import locked.`in`.data.local.entity.FocusModeEntity
-import locked.`in`.data.local.entity.NotificationBundleEntity
 import locked.`in`.data.local.entity.NotificationRecordEntity
 import locked.`in`.data.local.entity.NotificationRecordFts
 
@@ -21,10 +19,9 @@ import locked.`in`.data.local.entity.NotificationRecordFts
         FilterRuleEntity::class,
         NotificationRecordEntity::class,
         NotificationRecordFts::class,
-        BundleMapEntryEntity::class,
-        NotificationBundleEntity::class
+        BundleMapEntryEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -33,7 +30,6 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun filterRuleDao(): FilterRuleDao
     abstract fun notificationRecordDao(): NotificationRecordDao
     abstract fun bundleMapDao(): BundleMapDao
-    abstract fun notificationBundleDao(): NotificationBundleDao
 
     companion object {
         const val DATABASE_NAME = "smartfocus_v2_db"

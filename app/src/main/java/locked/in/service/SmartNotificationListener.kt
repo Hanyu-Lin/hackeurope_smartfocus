@@ -15,6 +15,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import locked.`in`.data.repository.SettingsRepository
 import locked.`in`.domain.engine.ActionDispatcher
+import locked.`in`.domain.model.RuleAction
 
 class SmartNotificationListener : NotificationListenerService() {
 
@@ -30,6 +31,7 @@ class SmartNotificationListener : NotificationListenerService() {
         fun classifierPipeline(): ClassifierPipeline
         fun suppressedNotificationPoster(): SuppressedNotificationPoster
         fun actionDispatcher(): ActionDispatcher
+        fun bundleNotificationPoster(): locked.`in`.service.BundleNotificationPosterInterface
     }
 
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -43,6 +45,7 @@ class SmartNotificationListener : NotificationListenerService() {
     private val pipeline by lazy { entryPoint.classifierPipeline() }
     private val suppressedPoster by lazy { entryPoint.suppressedNotificationPoster() }
     private val actionDispatcher by lazy { entryPoint.actionDispatcher() }
+    private val bundlePoster by lazy { entryPoint.bundleNotificationPoster() }
 
     override fun onListenerConnected() {
         super.onListenerConnected()
@@ -96,7 +99,14 @@ class SmartNotificationListener : NotificationListenerService() {
                         Log.d(TAG, "Suppressed and resurfaced: ${parsed.appLabel} - ${parsed.title}")
                     }
                     is PipelineResult.Bundle -> {
-                        // Bundle path (unused when AI model is disabled)
+                        // JoinBundle: cancel first (solo) + this notification, then post/update grouped, then dispatch action if allowed
+                        cancelNotification(result.soloSbnKey)
+                        cancelNotification(sbn.key)
+                        bundlePoster.handleBundle(result.bundleId, parsed, result.recordId)
+                        if (result.allowAction != RuleAction.NONE) {
+                            actionDispatcher.dispatch(result.allowAction)
+                        }
+                        Log.d(TAG, "Bundled: ${result.bundleId} — ${parsed.appLabel} - ${parsed.title}")
                     }
                 }
             } catch (e: Exception) {

@@ -1,16 +1,13 @@
 package locked.`in`.data.repository
 
 import locked.`in`.data.local.dao.BundleMapDao
-import locked.`in`.data.local.dao.NotificationBundleDao
 import locked.`in`.data.local.entity.BundleMapEntryEntity
-import locked.`in`.data.local.entity.NotificationBundleEntity
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class BundleRepositoryImpl @Inject constructor(
-    private val bundleMapDao: BundleMapDao,
-    private val notificationBundleDao: NotificationBundleDao
+    private val bundleMapDao: BundleMapDao
 ) : BundleRepository {
 
     override suspend fun insertBundleMapEntry(entity: BundleMapEntryEntity) =
@@ -30,19 +27,22 @@ class BundleRepositoryImpl @Inject constructor(
 
     override suspend fun bundleMapCount(): Int = bundleMapDao.count()
 
-    override suspend fun insertBundle(entity: NotificationBundleEntity) =
-        notificationBundleDao.insert(entity)
+    override suspend fun getBundleByBundleId(bundleId: String): BundleMapEntryEntity? =
+        bundleMapDao.getByBundleId(bundleId)
 
-    override suspend fun updateBundle(entity: NotificationBundleEntity) =
-        notificationBundleDao.update(entity)
+    override suspend fun updateBundleLive(
+        bundleId: String,
+        appLabel: String?,
+        notificationIds: String?,
+        soloSbnKey: String?,
+        postedNotificationId: Int,
+        allowAction: String?,
+        updatedAt: Long
+    ) = bundleMapDao.updateLiveByBundleId(
+        bundleId, appLabel, notificationIds, soloSbnKey, postedNotificationId, allowAction, updatedAt
+    )
 
-    override suspend fun getBundleByBundleId(bundleId: String): NotificationBundleEntity? =
-        notificationBundleDao.getByBundleId(bundleId)
-
-    override suspend fun getAllBundles(): List<NotificationBundleEntity> =
-        notificationBundleDao.getAll()
-
-    override suspend fun clearAllBundles() = notificationBundleDao.deleteAll()
+    override suspend fun clearAllBundles() = bundleMapDao.clearAllLive(System.currentTimeMillis())
 
     override suspend fun clearBundleMap() = bundleMapDao.deleteAll()
 }

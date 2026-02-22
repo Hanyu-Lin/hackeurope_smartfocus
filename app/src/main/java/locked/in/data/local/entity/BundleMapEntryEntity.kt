@@ -10,7 +10,13 @@ data class BundleMapEntryEntity(
     val centroid: ByteArray,
     val packageName: String,
     val createdAt: Long,
-    val updatedAt: Long
+    val updatedAt: Long,
+    // Live columns: set when first notification passes through; cleared on focus-off / app start
+    val appLabel: String? = null,
+    val notificationIds: String? = null,
+    val soloSbnKey: String? = null,
+    val postedNotificationId: Int = -1,
+    val allowAction: String? = null
 ) {
     override fun equals(other: Any?): Boolean {
         if (this === other) return true

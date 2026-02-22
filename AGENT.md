@@ -2,16 +2,16 @@
 
 ## Project Overview
 
-An Android app that acts as an intelligent notification firewall. It intercepts all system notifications via `NotificationListenerService`, applies user-defined **Focus Modes** (each a named set of filter rules), sends ambiguous notifications to an AI classifier via a structured plaintext prompt built from the raw notification object, deduplicates cross-app notifications for the same event, and persists every intercepted notification for full-text search and audit.
+An Android app that acts as an intelligent notification firewall. It intercepts all system notifications via `NotificationListenerService`, applies user-defined **Focus Modes** (each a named set of filter rules), runs an **AI model on every notification** (for urgency and cross-app bundling), uses **rules as explicit overrides** for delivery, and persists every intercepted notification for full-text search and audit.
 
 **Core features:**
 
-- **Focus Modes** — iOS-inspired named profiles (e.g., "Work", "Sleep", "Gym"), each with independent filter rules
-- **Per-rule actions** — each rule can trigger an alarm sound, haptic buzz, or silent delivery
-- **AI-based urgency detection** — structured plaintext prompt sent to AI classifier for notifications that pass rule filters; sensitivity toggle controls the threshold
-- **Whitelist support** — app-level or contact-level pass-through rules
-- **Cross-app bundling** — model-driven grouping using a dynamic `BundleMap` (k × 1024 latent vectors stored in Room); solo notifications pass through the original `StatusBarNotification` untouched; once a second related notification arrives the first is cancelled and both are re-posted as a single app-branded grouped notification updated in real time
-- **Notification Search & Audit** — all intercepted notifications persisted and fully searchable by keyword, app, timestamp, or priority
+- **Focus Modes** — iOS-inspired named profiles (e.g., "Work", "Sleep", "Gym"), each with independent filter rules and a sensitivity (priority) threshold
+- **Rules = explicit overrides** — ALLOW (always show, optional alarm/buzz/silent) or SUPPRESS (always hide). Rules do not skip the AI: the model still runs so that bundling works for related messages (same thread, cross-app)
+- **AI on every notification** — every notification gets a priority score and a bundle assignment (new thread or join existing). This enables **cross-app bundling**: e.g. same email thread from Gmail + Slack can be grouped
+- **Bundling** — model-driven grouping via a dynamic `BundleMap`; when a second related notification arrives, the first is cancelled and both are shown as one grouped notification, updated in real time
+- **Sensitivity (priority) threshold** — when no rule matches, notifications above the threshold pass through; below, they are suppressed (and can appear in the digest)
+- **Notification Search & Audit** — all intercepted notifications persisted and fully searchable by keyword, app, timestamp, or outcome
 
 **Supported apps (initial scope):** Phone calls, SMS, LinkedIn, Gmail, Instagram, Discord
 
@@ -21,91 +21,64 @@ An Android app that acts as an intelligent notification firewall. It intercepts 
 
 ## Architecture
 
-### Core Pipeline
+### Core Pipeline (model on every notification)
+
+**Why the model runs on every notification:** Cross-app and same-thread bundling only works if every notification gets a `(priority, group, latent)`. If we only ran the model when no rule matched, we could never group a message that was allowed by a rule with a later message from another app or the same thread. So: **parse → model → bundle engine → rule check → delivery**.
 
 ```
 Notification arrives (NotificationListenerService)
         │
         ▼
 ┌─────────────────────┐
-│  NotificationParser  │  ← Extract structured fields + capture all
-│                      │    original sbn metadata for pass-through /
-│                      │    cancellation. Produces ParsedNotification.
+│  NotificationParser  │  ← Extract structured fields + capture original
+│                      │    sbn metadata. Produces ParsedNotification.
 └────────┬────────────┘
          │
          ▼
 ┌─────────────────────┐
 │  Focus Mode Router   │  ← Any Focus Mode active?
 └────────┬────────────┘
-         │ No active mode
-         │   → sbn passes through untouched (do NOT cancel)
-         │   → Persist NotificationRecord (outcome = ALLOWED)
-         │
+         │ No active mode → sbn passes through, persist ALLOWED. DONE.
          │ Active mode
          ▼
-┌─────────────────────┐
-│  Rule Engine         │  ← Evaluate ordered rules on ParsedNotification.
-│  (Stage 1)           │    Each matched rule carries an Action config.
-└────────┬────────────┘
-         │
-    Rule match?
-         ├──ALLOW──▶ Execute RuleAction (buzz / alarm / silent).
-         │           sbn passes through untouched.
-         │           Persist (outcome = ALLOWED).
-         │
-         ├──SUPPRESS▶ cancelNotification(sbn.key).
-         │            Persist (outcome = SUPPRESSED).
-         │
-        No match → send rawPrompt to AI model
-         │
-         ▼
 ┌──────────────────────────────────────────┐
-│  AI Model                                 │
-│  Input:  rawPrompt (plaintext string)     │
-│  Output: priority  — Float 0–10           │
-│          group     — k-dim sparse vector  │
-│          latent    — FloatArray(1024)     │
+│  AI Model (runs on every notification)   │
+│  Input:  rawPrompt, packageName           │
+│  Output: priority (0–10), group (k-dim),  │
+│          latent (1024)                    │
 └────────┬─────────────────────────────────┘
          │
          ▼
 ┌─────────────────────┐
-│  BundleEngine        │  ← Resolve group vector against BundleMap.
-│                      │    Assign to existing bundle or create new.
-│                      │    Update BundleMap centroid (EMA).
+│  BundleEngine.assign │  ← NewBundle or JoinBundle (same thread / cross-app)
 └────────┬────────────┘
          │
-   Bundle assigned?
-         │
-         ├──Existing bundle (size was 1 → now 2)
-         │    → Cancel the previously passed-through sbn.
-         │    → Cancel this sbn.
-         │    → Post new grouped MessagingStyle notification.
-         │    → Persist (outcome = BUNDLED).
-         │
-         ├──Existing bundle (size already ≥ 2)
-         │    → Cancel this sbn.
-         │    → Update existing grouped notification in-place.
-         │    → Persist (outcome = BUNDLED).
-         │
-        New bundle (group all zeros)
-         │    → Store latent as new BundleMap entry.
-         │    → Check priority score:
+         ▼
+┌─────────────────────┐
+│  Rule Engine         │  ← Match ALLOW / SUPPRESS / NoMatch (delivery override)
+└────────┬────────────┘
          │
          ▼
-   priority ≥ threshold?
+  Delivery decision (combine bundle + rule):
          │
-         ├──Yes → sbn passes through untouched.
-         │         Persist (outcome = ALLOWED).
+         ├── JoinBundle (2nd+ in same bundle)
+         │     → Always group: cancel first (soloSbnKey) + this sbn, post/update
+         │       grouped notification. Persist BUNDLED.
          │
-        No  → cancelNotification(sbn.key).
-               Persist (outcome = SUPPRESSED).
+         └── NewBundle (first in thread)
+               ├── Rule ALLOW   → Pass through, dispatch action, store bundle + cache
+               │                  parsed. Persist ALLOWED.
+               ├── Rule SUPPRESS→ Cancel, resurface. Persist SUPPRESSED.
+               └── No rule match→ priority ≥ threshold → pass through (store bundle
+                                    + cache); else cancel + resurface. Persist
+                                    ALLOWED or SUPPRESSED.
 ```
 
 ### Hot Path vs Cold Path
 
-- **Hot path** (every notification during focus mode): Parse → Rule Engine → AI Model → Bundle Engine → deliver or cancel. The AI model call is the primary latency driver; rule-matched notifications never reach the model.
-- **Cold path** (on focus mode end): Template-based digest of SUPPRESSED + BUNDLED notifications. Pure Kotlin string formatting, no inference.
-- **Audit path** (always): Every intercepted notification is written to Room DB with its final outcome regardless of active mode or rule result.
+- **Hot path** (every notification during focus mode): Parse → **AI Model** → BundleEngine → Rule Engine → deliver or cancel. The model runs on every notification so bundling (including cross-app) is possible; rules then override delivery only for **NewBundle** (first in a thread).
+- **Cold path** (on focus mode end): Template-based digest of SUPPRESSED + BUNDLED notifications. No inference.
+- **Audit path** (always): Every intercepted notification is written to Room DB with its final outcome.
 
 ---
 
@@ -129,8 +102,40 @@ Notification arrives (NotificationListenerService)
 | Contact resolution        | ContactsContract API                                                 |
 | Summarization / Digest    | Template-based grouping engine (pure Kotlin)                         |
 | Search                    | Room FTS4 full-text search                                           |
-| Audio alerts              | AudioManager + SoundPool                                             |
+| Audio alerts              | RingtoneManager / AudioManager                                       |
 | Haptic alerts             | VibrationEffect API                                                  |
+
+---
+
+## User Experience & Mental Model
+
+### What the user controls
+
+- **Focus Mode** — A named profile (e.g. "Work", "Sleep") that is either on or off. When on, filtering and bundling apply.
+- **Rules** — Explicit allow or suppress by app, contact, keyword, or category. Rules are **overrides**: "Always show calls", "Always hide LinkedIn likes". They do not turn off the AI; the model still runs so that related messages can be grouped.
+- **Sensitivity (priority threshold)** — A slider per Focus Mode. When a notification is **not** covered by a rule, the model’s priority score is compared to this threshold: above = show, below = suppress (and appear in the digest). Higher sensitivity = lower bar = more notifications get through.
+
+### What happens automatically (no configuration)
+
+- **Bundling** — The model decides whether a notification belongs to an existing “thread” (same conversation, same email, cross-app). When a second related one arrives, the first is replaced by a single grouped notification that updates as more arrive. The user does not configure bundling; it is always on when a Focus Mode is active.
+- **Digest** — When the user turns off Focus Mode, they get a summary of what was suppressed and what was bundled, with optional “might be important” highlights from priority scores.
+
+### UX principles
+
+1. **Rules are predictable** — If the user adds “Allow Gmail”, every Gmail notification in that mode is shown. No surprise.
+2. **Bundling is transparent** — Grouped notifications look like one thread (e.g. “Gmail · 3 notifications”) and expand to show each item. The user can tap to open the source app.
+3. **Sensitivity is one knob** — One slider per mode controls “how much gets through” when there’s no rule. Easy to tune without editing many rules.
+4. **Digest is a safety net** — Suppressed and bundled items are not lost; they appear in the digest and in Search so the user can review.
+
+### Outcome summary (for implementation)
+
+| Scenario                         | User sees / outcome |
+|----------------------------------|---------------------|
+| Rule ALLOW                       | Notification passes through (optional alarm/buzz/silent). Still recorded for bundling. |
+| Rule SUPPRESS                    | Notification hidden; can appear in digest and search. |
+| No rule, NewBundle, priority ≥ threshold | Notification passes through. Later related ones can group with it. |
+| No rule, NewBundle, priority < threshold | Notification suppressed; in digest. |
+| No rule, JoinBundle (2nd+ in thread) | Original(s) replaced by one grouped notification, updated in place. |
 
 ---
 
@@ -601,13 +606,15 @@ Focus modes are user-created profiles stored in Room. Only one mode can be activ
 
 ### Rule Evaluation Order
 
+Rules are **delivery overrides** only. The AI model and BundleEngine run on every notification regardless of rules; rules only change whether we pass through or suppress when the notification is the **first** in its bundle (NewBundle). For JoinBundle (2nd+ in a thread), we always group.
+
 Rules are evaluated by type priority, then by insertion order within the same type:
 
-1. `CATEGORY` rules — `call` and `system` evaluated first (always-allow candidates)
+1. `CATEGORY` rules — e.g. call, system (allow/block by category)
 2. `CONTACT` rules — whitelist pass-through for known senders
 3. `APP` rules — package-level allowlist / blocklist
 4. `KEYWORD` rules — urgency keywords or spam patterns in title/text
-5. No match → escalate to AI Classifier
+5. No match → delivery is decided by **model priority vs sensitivity threshold** (see Core Pipeline)
 
 Within each type, ALLOW rules take priority over SUPPRESS rules. Among rules of the same type and effect, the first matching rule (by insertion order) wins.
 
@@ -638,28 +645,16 @@ Suppressed notifications always use `SILENT` regardless of action config.
 
 ---
 
-## AI Classifier Integration
+## AI Model Integration
 
-The AI classifier receives `rawPrompt` and returns a priority label. The integration is intentionally thin:
+The **hot path** uses `NotificationModel.infer(rawPrompt, packageName)` and runs it on **every** notification (see Core Pipeline). The model returns `ModelOutput(priority, group, latent)` so that:
 
-- **Input:** `rawPrompt` plaintext string (4 lines max, ~300 chars max)
-- **Output:** One of `high`, `medium`, `low` — or a normalized float score in `[0.0, 1.0]`
-- **Threshold:** Controlled per Focus Mode by `sensitivityThreshold`
-  - Higher sensitivity = lower pass threshold = more notifications get through
-- **Interface:**
+- **priority** (0–10) is compared to the Focus Mode’s sensitivity threshold when no rule matches (NewBundle).
+- **group** and **latent** drive bundle assignment (new or join) for cross-app and same-thread grouping.
 
-```kotlin
-interface NotificationClassifier {
-    suspend fun classify(prompt: String): ClassificationResult
-}
+The sensitivity (priority) threshold is per Focus Mode: higher sensitivity = lower bar = more notifications pass through when there is no rule match.
 
-data class ClassificationResult(
-    val label: String,   // "high" | "medium" | "low"
-    val score: Float     // 0.0–1.0
-)
-```
-
-The concrete implementation (local rules, on-device LLM, remote API) is swappable without touching the pipeline.
+The concrete implementation (e.g. `NaiveNotificationModel`, or a real trained model) is swappable via Hilt without touching the pipeline.
 
 ---
 

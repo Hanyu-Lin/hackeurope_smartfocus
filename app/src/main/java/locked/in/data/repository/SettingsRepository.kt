@@ -13,8 +13,8 @@ interface SettingsRepository {
     suspend fun setRetentionDays(days: Int)
     suspend fun setFocusSessionStartTime(time: Long?)
 
-    val scheduleOverrideModeId: Flow<String?>
-    suspend fun setScheduleOverrideModeId(id: String?)
+    val scheduleOverrideModeIds: Flow<Set<String>>
+    suspend fun setScheduleOverrideModeIds(ids: Set<String>)
 
     val focusTimerEndTimes: Flow<Map<String, Long>>
     suspend fun setFocusTimerEndTime(modeId: String, endTime: Long?)

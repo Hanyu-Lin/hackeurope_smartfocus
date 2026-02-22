@@ -75,6 +75,38 @@ class FocusModeRepositoryImpl @Inject constructor(
         focusModeDao.update(mode.toEntity())
     }
 
+    override suspend fun updateName(id: String, name: String) {
+        focusModeDao.updateName(id, name)
+    }
+
+    override suspend fun updatePriorityThreshold(id: String, threshold: Float) {
+        focusModeDao.updatePriorityThreshold(id, threshold)
+    }
+
+    override suspend fun updateScheduleEnabled(id: String, enabled: Boolean) {
+        focusModeDao.updateScheduleEnabled(id, enabled)
+    }
+
+    override suspend fun updateScheduleDays(id: String, days: Set<DayOfWeek>) {
+        focusModeDao.updateScheduleDays(id, days.toDaysString())
+    }
+
+    override suspend fun updateScheduleStartMinute(id: String, minute: Int) {
+        focusModeDao.updateScheduleStartMinute(id, minute)
+    }
+
+    override suspend fun updateScheduleEndMinute(id: String, minute: Int) {
+        focusModeDao.updateScheduleEndMinute(id, minute)
+    }
+
+    override suspend fun updateTimerEnabled(id: String, enabled: Boolean) {
+        focusModeDao.updateTimerEnabled(id, enabled)
+    }
+
+    override suspend fun updateTimerDurationMinutes(id: String, minutes: Int) {
+        focusModeDao.updateTimerDurationMinutes(id, minutes)
+    }
+
     override suspend fun deleteById(id: String) {
         focusModeDao.deleteById(id)
     }

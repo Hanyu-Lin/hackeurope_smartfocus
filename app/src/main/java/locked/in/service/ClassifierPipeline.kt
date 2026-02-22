@@ -40,20 +40,9 @@ class ClassifierPipeline @Inject constructor(
             return PipelineResult.PassThrough
         }
 
-        // Filter out scheduled modes that are outside their window
-        val effectiveModes = activeModes.filter { mode ->
-            !mode.scheduleEnabled || ScheduleUtil.isInScheduledWindow(mode)
-        }
-
-        if (effectiveModes.isEmpty()) {
-            Log.d(TAG, "All active modes are outside their schedule window — pass through: ${parsed.appLabel} / ${parsed.title}")
-            persist(parsed, NotificationOutcome.ALLOWED, null)
-            return PipelineResult.PassThrough
-        }
-
-        // Merge rules from all effective modes
-        val mergedRules = effectiveModes.flatMap { it.rules }
-        Log.d(TAG, "Active modes: ${effectiveModes.joinToString { it.name }} with ${mergedRules.size} merged rules")
+        // Merge rules from all active modes (schedule window is not applied here; controller handles activation)
+        val mergedRules = activeModes.flatMap { it.rules }
+        Log.d(TAG, "Active modes: ${activeModes.joinToString { it.name }} with ${mergedRules.size} merged rules")
         Log.d(TAG, "Evaluating: pkg=${parsed.packageName}, category=${parsed.category}, title=${parsed.title}, text=${parsed.text.take(50)}")
 
         val ruleResult = RuleEngine.evaluate(parsed, mergedRules)

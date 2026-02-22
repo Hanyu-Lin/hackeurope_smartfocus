@@ -48,13 +48,25 @@ class SettingsRepositoryImpl @Inject constructor(
         }
     }
 
-    override val scheduleOverrideModeId: Flow<String?> =
-        dataStore.data.map { it[PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID] }
+    override val scheduleOverrideModeIds: Flow<Set<String>> =
+        dataStore.data.map { prefs ->
+            val newRaw = prefs[PreferenceKeys.SCHEDULE_OVERRIDE_MODE_IDS]
+            if (!newRaw.isNullOrBlank()) {
+                newRaw.split(",").map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+            } else {
+                val old = prefs[PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID]
+                if (old != null) setOf(old) else emptySet()
+            }
+        }
 
-    override suspend fun setScheduleOverrideModeId(id: String?) {
+    override suspend fun setScheduleOverrideModeIds(ids: Set<String>) {
         dataStore.edit { prefs ->
-            if (id != null) prefs[PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID] = id
-            else prefs.remove(PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID)
+            prefs.remove(PreferenceKeys.SCHEDULE_OVERRIDE_MODE_ID)
+            if (ids.isEmpty()) {
+                prefs.remove(PreferenceKeys.SCHEDULE_OVERRIDE_MODE_IDS)
+            } else {
+                prefs[PreferenceKeys.SCHEDULE_OVERRIDE_MODE_IDS] = ids.joinToString(",")
+            }
         }
     }
 

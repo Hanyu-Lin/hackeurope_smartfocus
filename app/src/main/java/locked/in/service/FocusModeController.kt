@@ -36,6 +36,7 @@ class FocusModeController @Inject constructor(
 
     suspend fun activate(modeId: String) {
         focusModeRepository.activate(modeId)
+        settingsRepository.setActiveFocusModeId(modeId)
         settingsRepository.setFocusSessionStartTime(System.currentTimeMillis())
 
         val mode = focusModeRepository.getById(modeId)
@@ -77,7 +78,7 @@ class FocusModeController @Inject constructor(
             settingsRepository.setFocusSessionStartTime(null)
             stopService()
         } else {
-            // Update notification with remaining mode names
+            settingsRepository.setActiveFocusModeId(remaining.first().id)
             startService(remaining.map { it.name })
         }
     }
@@ -108,48 +109,62 @@ class FocusModeController @Inject constructor(
         } else {
             activate(modeId)
         }
-        settingsRepository.setScheduleOverrideModeId(modeId)
+        val mode = focusModeRepository.getById(modeId)
+        val currentOverrides = settingsRepository.scheduleOverrideModeIds.first()
+        val newOverrides = if (mode?.scheduleEnabled == true) currentOverrides + modeId else currentOverrides - modeId
+        settingsRepository.setScheduleOverrideModeIds(newOverrides)
     }
 
-    /** Evaluates schedule (activate/deactivate) and sets the next boundary alarm. */
+    /** Evaluates schedule (activate/deactivate) and sets the next boundary alarm. Multi-mode: all modes in window are activated; expired scheduled modes always deactivated. */
     suspend fun evaluateSchedule() {
-        // Check if any timer-based modes have expired (catches edge cases where worker didn't fire)
+        // Timer expiry fallback
         val timerEndTimes = settingsRepository.focusTimerEndTimes.first()
         val now = System.currentTimeMillis()
         for ((modeId, endTime) in timerEndTimes) {
             if (now >= endTime) {
-                Log.d(TAG, "Timer expired (fallback check) for mode $modeId, deactivating")
+                Log.d(TAG, "Timer expired (fallback) for mode $modeId, deactivating")
                 deactivateMode(modeId)
             }
         }
 
         val currentTime = LocalDateTime.now()
-
         val scheduledModes = focusModeRepository.getScheduledModes()
-        val targetMode = scheduledModes.firstOrNull { mode ->
-            ScheduleUtil.isInScheduledWindow(mode, currentTime)
-        }
+        val inWindowModes = scheduledModes.filter { ScheduleUtil.isInScheduledWindow(it, currentTime) }
+        val inWindowIds = inWindowModes.map { it.id }.toSet()
 
-        val activeModes = focusModeRepository.getActive()
-        val overrideModeId = settingsRepository.scheduleOverrideModeId.first()
-
-        if (overrideModeId != null) {
-            val scheduleSaysActive = targetMode != null && targetMode.id == overrideModeId
-            val isCurrentlyActive = activeModes.any { it.id == overrideModeId }
-            if (scheduleSaysActive != isCurrentlyActive) {
-                Log.d(TAG, "Respecting manual override for $overrideModeId")
-                scheduleNextBoundaryAlarm()
-                return
+        var activeModes = focusModeRepository.getActive()
+        // (1) Always deactivate any active scheduled mode that is outside its window
+        for (mode in activeModes) {
+            if (mode.scheduleEnabled && mode.id !in inWindowIds) {
+                Log.d(TAG, "Deactivating scheduled mode outside window: ${mode.name}")
+                deactivateMode(mode.id)
             }
-            settingsRepository.setScheduleOverrideModeId(null)
+        }
+        activeModes = focusModeRepository.getActive()
+        val activeIds = activeModes.map { it.id }.toSet()
+
+        var overrideIds = settingsRepository.scheduleOverrideModeIds.first()
+        overrideIds = overrideIds.filter { id ->
+            val scheduleSaysActive = id in inWindowIds
+            val isCurrentlyActive = id in activeIds
+            if (scheduleSaysActive == isCurrentlyActive) {
+                false
+            } else {
+                Log.d(TAG, "Respecting manual override for $id")
+                true
+            }
+        }.toSet()
+        settingsRepository.setScheduleOverrideModeIds(overrideIds)
+        if (overrideIds.isNotEmpty()) {
+            scheduleNextBoundaryAlarm()
+            return
         }
 
-        if (targetMode != null) {
-            val alreadyActive = activeModes.any { it.id == targetMode.id }
-            if (!alreadyActive) activate(targetMode.id)
-        } else {
-            for (mode in activeModes) {
-                if (mode.scheduleEnabled) deactivateMode(mode.id)
+        // (2) Activate every in-window mode that is not already active
+        for (mode in inWindowModes) {
+            if (mode.id !in activeIds) {
+                Log.d(TAG, "Activating scheduled mode: ${mode.name}")
+                activate(mode.id)
             }
         }
         scheduleNextBoundaryAlarm()

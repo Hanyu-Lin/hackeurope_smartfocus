@@ -34,22 +34,23 @@ class FocusModeTile : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         tileScope.launch {
-            val activeModeId = entryPoint.settingsRepository().activeFocusModeId.first()
-            updateTileState(activeModeId != null)
+            val hasActive = entryPoint.settingsRepository().activeFocusModeId.first() != null ||
+                entryPoint.focusModeRepository().getActive().isNotEmpty()
+            updateTileState(hasActive)
         }
     }
 
     override fun onClick() {
         super.onClick()
         tileScope.launch {
-            val activeModeId = entryPoint.settingsRepository().activeFocusModeId.first()
+            val repo = entryPoint.focusModeRepository()
+            val hasActive = repo.getActive().isNotEmpty()
             val controller = entryPoint.focusModeController()
-            if (activeModeId != null) {
+            if (hasActive) {
                 controller.deactivateAll()
                 updateTileState(false)
             } else {
-                // Activate first available mode
-                val modes = entryPoint.focusModeRepository().observeAll().first()
+                val modes = repo.observeAll().first()
                 val firstMode = modes.firstOrNull()
                 if (firstMode != null) {
                     controller.activate(firstMode.id)

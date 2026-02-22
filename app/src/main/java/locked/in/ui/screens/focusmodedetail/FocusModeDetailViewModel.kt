@@ -5,6 +5,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.navigation.toRoute
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
@@ -42,6 +44,8 @@ class FocusModeDetailViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(FocusModeDetailUiState())
     val uiState: StateFlow<FocusModeDetailUiState> = _uiState
 
+    private var scheduleEvaluateJob: Job? = null
+
     init {
         // Sync schedule state when navigating to this screen
         viewModelScope.launch {
@@ -66,17 +70,11 @@ class FocusModeDetailViewModel @Inject constructor(
     }
 
     fun updateName(name: String) {
-        viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
-            repository.update(mode.copy(name = name))
-        }
+        viewModelScope.launch { repository.updateName(modeId, name) }
     }
 
     fun updateThreshold(threshold: Float) {
-        viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
-            repository.update(mode.copy(priorityThreshold = threshold))
-        }
+        viewModelScope.launch { repository.updatePriorityThreshold(modeId, threshold) }
     }
 
     fun addRule(type: RuleType, value: String, effect: RuleEffect) {
@@ -113,71 +111,65 @@ class FocusModeDetailViewModel @Inject constructor(
 
     fun toggleTimerEnabled() {
         viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
+            val mode = _uiState.value.mode ?: return@launch
             val newTimerEnabled = !mode.timerEnabled
-            repository.update(
-                mode.copy(
-                    timerEnabled = newTimerEnabled,
-                    scheduleEnabled = if (newTimerEnabled) false else mode.scheduleEnabled
-                )
-            )
+            repository.updateTimerEnabled(modeId, newTimerEnabled)
+            if (newTimerEnabled) repository.updateScheduleEnabled(modeId, false)
             onScheduleChanged()
         }
     }
 
     fun updateTimerDuration(minutes: Int) {
         viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
-            repository.update(mode.copy(timerDurationMinutes = minutes))
+            repository.updateTimerDurationMinutes(modeId, minutes)
             onScheduleChanged()
         }
     }
 
     fun toggleScheduleEnabled() {
         viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
+            val mode = _uiState.value.mode ?: return@launch
             val newScheduleEnabled = !mode.scheduleEnabled
-            repository.update(
-                mode.copy(
-                    scheduleEnabled = newScheduleEnabled,
-                    timerEnabled = if (newScheduleEnabled) false else mode.timerEnabled
-                )
-            )
+            repository.updateScheduleEnabled(modeId, newScheduleEnabled)
+            if (newScheduleEnabled) repository.updateTimerEnabled(modeId, false)
             onScheduleChanged()
         }
     }
 
     fun updateScheduleDays(days: Set<DayOfWeek>) {
         viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
-            repository.update(mode.copy(scheduleDays = days))
+            repository.updateScheduleDays(modeId, days)
             onScheduleChanged()
         }
     }
 
     fun updateScheduleStartTime(hour: Int, minute: Int) {
         viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
-            repository.update(mode.copy(scheduleStartMinute = hour * 60 + minute))
+            repository.updateScheduleStartMinute(modeId, hour * 60 + minute)
             onScheduleChanged()
         }
     }
 
     fun updateScheduleEndTime(hour: Int, minute: Int) {
         viewModelScope.launch {
-            val mode = repository.getById(modeId) ?: return@launch
-            repository.update(mode.copy(scheduleEndMinute = hour * 60 + minute))
+            repository.updateScheduleEndMinute(modeId, hour * 60 + minute)
             onScheduleChanged()
         }
     }
 
-    private suspend fun onScheduleChanged() {
-        // User is actively configuring the schedule — clear any manual override
-        // so evaluateSchedule follows the new schedule purely.
-        settingsRepository.setScheduleOverrideModeId(null)
-        // Full evaluate: activates if schedule matches now, deactivates if not.
-        // The reactive observeById flow will push the new isActive to the UI.
-        focusModeController.evaluateSchedule()
+    private fun onScheduleChanged() {
+        viewModelScope.launch { settingsRepository.setScheduleOverrideModeIds(emptySet()) }
+        scheduleEvaluateJob?.cancel()
+        scheduleEvaluateJob = viewModelScope.launch {
+            delay(500)
+            focusModeController.evaluateSchedule()
+            scheduleEvaluateJob = null
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        scheduleEvaluateJob?.cancel()
     }
 
     fun deleteMode(onDone: () -> Unit) {

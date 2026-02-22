@@ -3,6 +3,7 @@ package locked.`in`.data.repository
 import kotlinx.coroutines.flow.Flow
 import locked.`in`.domain.model.FilterRule
 import locked.`in`.domain.model.FocusMode
+import java.time.DayOfWeek
 
 interface FocusModeRepository {
     fun observeAll(): Flow<List<FocusMode>>
@@ -12,6 +13,14 @@ interface FocusModeRepository {
     suspend fun getActive(): List<FocusMode>
     suspend fun insert(mode: FocusMode)
     suspend fun update(mode: FocusMode)
+    suspend fun updateName(id: String, name: String)
+    suspend fun updatePriorityThreshold(id: String, threshold: Float)
+    suspend fun updateScheduleEnabled(id: String, enabled: Boolean)
+    suspend fun updateScheduleDays(id: String, days: Set<DayOfWeek>)
+    suspend fun updateScheduleStartMinute(id: String, minute: Int)
+    suspend fun updateScheduleEndMinute(id: String, minute: Int)
+    suspend fun updateTimerEnabled(id: String, enabled: Boolean)
+    suspend fun updateTimerDurationMinutes(id: String, minutes: Int)
     suspend fun deleteById(id: String)
     suspend fun activate(id: String)
     suspend fun deactivate()

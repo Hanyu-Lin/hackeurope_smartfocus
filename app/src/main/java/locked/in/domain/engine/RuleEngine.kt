@@ -3,6 +3,7 @@ package locked.`in`.domain.engine
 import android.util.Log
 import locked.`in`.domain.model.FilterRule
 import locked.`in`.domain.model.ParsedNotification
+import locked.`in`.domain.model.RuleEffect
 import locked.`in`.domain.model.RuleType
 import locked.`in`.domain.model.SupportedApp
 
@@ -20,17 +21,27 @@ object RuleEngine {
             Log.d(TAG, "No rules to evaluate")
             return RuleResult.NoMatch
         }
-        val ordered = rules.sortedWith(compareBy { typeOrder(it.type) })
-        Log.d(TAG, "Evaluating ${ordered.size} rules against pkg=${parsed.packageName}, category=${parsed.category}")
-        for (rule in ordered) {
-            val matched = matches(parsed, rule)
-            Log.d(TAG, "  Rule[${rule.type}/${rule.value}/${rule.effect}] -> matched=$matched")
-            if (matched) {
-                return RuleResult.Match(rule)
+        Log.d(TAG, "Evaluating ${rules.size} rules against pkg=${parsed.packageName}, category=${parsed.category}")
+        val matching = rules.filter { matches(parsed, it) }
+        matching.forEach { rule ->
+            Log.d(TAG, "  Rule[${rule.type}/${rule.value}/${rule.effect}] -> matched")
+        }
+        val allowRules = matching.filter { it.effect == RuleEffect.ALLOW }
+        val suppressRules = matching.filter { it.effect == RuleEffect.SUPPRESS }
+        return when {
+            allowRules.isNotEmpty() -> {
+                val pick = allowRules.minWith(compareBy<FilterRule> { typeOrder(it.type) }.thenBy { it.sortOrder })
+                RuleResult.Match(pick)
+            }
+            suppressRules.isNotEmpty() -> {
+                val pick = suppressRules.minWith(compareBy<FilterRule> { typeOrder(it.type) }.thenBy { it.sortOrder })
+                RuleResult.Match(pick)
+            }
+            else -> {
+                Log.d(TAG, "No rule matched")
+                RuleResult.NoMatch
             }
         }
-        Log.d(TAG, "No rule matched")
-        return RuleResult.NoMatch
     }
 
     private fun typeOrder(type: RuleType): Int = when (type) {

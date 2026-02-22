@@ -46,4 +46,28 @@ interface FocusModeDao {
 
     @Query("SELECT * FROM focus_modes WHERE scheduleEnabled = 1 ORDER BY name ASC")
     suspend fun getScheduledModes(): List<FocusModeEntity>
+
+    @Query("UPDATE focus_modes SET name = :name WHERE id = :id")
+    suspend fun updateName(id: String, name: String)
+
+    @Query("UPDATE focus_modes SET priorityThreshold = :threshold WHERE id = :id")
+    suspend fun updatePriorityThreshold(id: String, threshold: Float)
+
+    @Query("UPDATE focus_modes SET scheduleEnabled = :enabled WHERE id = :id")
+    suspend fun updateScheduleEnabled(id: String, enabled: Boolean)
+
+    @Query("UPDATE focus_modes SET scheduleDays = :days WHERE id = :id")
+    suspend fun updateScheduleDays(id: String, days: String)
+
+    @Query("UPDATE focus_modes SET scheduleStartMinute = :minute WHERE id = :id")
+    suspend fun updateScheduleStartMinute(id: String, minute: Int)
+
+    @Query("UPDATE focus_modes SET scheduleEndMinute = :minute WHERE id = :id")
+    suspend fun updateScheduleEndMinute(id: String, minute: Int)
+
+    @Query("UPDATE focus_modes SET timerEnabled = :enabled WHERE id = :id")
+    suspend fun updateTimerEnabled(id: String, enabled: Boolean)
+
+    @Query("UPDATE focus_modes SET timerDurationMinutes = :minutes WHERE id = :id")
+    suspend fun updateTimerDurationMinutes(id: String, minutes: Int)
 }

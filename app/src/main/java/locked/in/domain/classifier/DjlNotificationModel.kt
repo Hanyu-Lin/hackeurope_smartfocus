@@ -1,7 +1,6 @@
 package locked.`in`.domain.classifier
 
 import ai.djl.Model
-import ai.djl.huggingface.tokenizers.HuggingFaceTokenizer
 import ai.djl.inference.Predictor
 import ai.djl.ndarray.NDList
 import ai.djl.ndarray.types.DataType
@@ -46,6 +45,7 @@ class DjlNotificationModel @Inject constructor(
     override suspend fun infer(prompt: String, packageName: String): ModelOutput {
         val p = getPredictor()
         if (p == null) {
+            Log.d(TAG, "Predictor unavailable, using fallback")
             return fallback.infer(prompt, packageName)
         }
         return try {
@@ -54,7 +54,7 @@ class DjlNotificationModel @Inject constructor(
                     p.predict(prompt)
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Inference failed, using fallback", e)
             fallback.infer(prompt, packageName)
         }
@@ -70,36 +70,43 @@ class DjlNotificationModel @Inject constructor(
 
             return try {
                 withContext(Dispatchers.IO) {
+                    Log.d(TAG, "Starting model initialization...")
+
                     val modelDir = File(context.filesDir, "djl_model")
                     modelDir.mkdirs()
 
                     val modelFile = File(modelDir, MODEL_ASSET)
                     if (!modelFile.exists()) {
+                        Log.d(TAG, "Copying model asset to filesDir...")
                         context.assets.open(MODEL_ASSET).use { input ->
                             modelFile.outputStream().use { output -> input.copyTo(output) }
                         }
+                        Log.d(TAG, "Model asset copied: ${modelFile.length()} bytes")
+                    } else {
+                        Log.d(TAG, "Model file already exists: ${modelFile.length()} bytes")
                     }
 
-                    val tokenizerFile = File(context.filesDir, TOKENIZER_ASSET)
-                    if (!tokenizerFile.exists()) {
-                        context.assets.open(TOKENIZER_ASSET).use { input ->
-                            tokenizerFile.outputStream().use { output -> input.copyTo(output) }
-                        }
+                    Log.d(TAG, "Initializing BertTokenizer from assets...")
+                    val tokenizer = context.assets.open(TOKENIZER_ASSET).use { stream ->
+                        BertTokenizer.fromInputStream(stream)
                     }
+                    Log.d(TAG, "Tokenizer initialized successfully")
 
-                    val tokenizer = HuggingFaceTokenizer.newInstance(tokenizerFile.toPath())
                     val translator = AttentionTranslator(tokenizer)
 
+                    Log.d(TAG, "Creating PyTorch model instance...")
                     val model = Model.newInstance("model_mobile", "PyTorch")
+                    Log.d(TAG, "Loading model weights from ${modelDir.absolutePath}...")
                     model.load(modelDir.toPath())
+                    Log.d(TAG, "Model loaded successfully")
 
                     val pred = model.newPredictor(translator)
                     predictor = pred
-                    Log.i(TAG, "Model and tokenizer loaded successfully")
+                    Log.i(TAG, "Model and tokenizer fully initialized")
                     pred
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to initialize DJL model", e)
+            } catch (e: Throwable) {
+                Log.e(TAG, "Failed to initialize DJL model: ${e.javaClass.simpleName}: ${e.message}", e)
                 initFailed = true
                 null
             }
@@ -107,7 +114,7 @@ class DjlNotificationModel @Inject constructor(
     }
 
     private class AttentionTranslator(
-        private val tokenizer: HuggingFaceTokenizer
+        private val tokenizer: BertTokenizer
     ) : Translator<String, ModelOutput> {
 
         override fun getBatchifier(): Batchifier? = null

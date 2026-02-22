@@ -92,7 +92,7 @@ class ClassifierPipeline @Inject constructor(
                 persist(parsed, NotificationOutcome.ALLOWED, null, output.priority, bundleId)
                 PipelineResult.Allow(RuleAction.SILENT)
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Model classification failed, passing through", e)
             persist(parsed, NotificationOutcome.ALLOWED, null)
             PipelineResult.PassThrough

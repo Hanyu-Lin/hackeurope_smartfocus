@@ -31,8 +31,18 @@ class NotificationRecordRepositoryImpl @Inject constructor(
     override fun observeForDigest(since: Long, outcomes: List<String>): Flow<List<NotificationRecordEntity>> =
         dao.observeForDigest(since, outcomes)
 
-    override suspend fun search(query: String): List<NotificationRecordEntity> =
-        dao.search(query)
+    override suspend fun search(query: String): List<NotificationRecordEntity> {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return emptyList()
+        val pattern = "%${escapeForLike(trimmed)}%"
+        return dao.searchByPattern(pattern)
+    }
+
+    override suspend fun getRecent(limit: Int): List<NotificationRecordEntity> =
+        dao.getRecent(limit)
+
+    private fun escapeForLike(value: String): String =
+        value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     override suspend fun countSince(since: Long): Int = dao.countSince(since)
 

@@ -1,5 +1,6 @@
 package locked.`in`.ui.screens.search
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,21 +14,28 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.SearchOff
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -39,7 +47,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import locked.`in`.domain.model.NotificationOutcome
 import locked.`in`.ui.components.NotificationCard
 
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun SearchScreen(
     onNavigateBack: () -> Unit,
@@ -47,48 +55,95 @@ fun SearchScreen(
     viewModel: SearchViewModel = hiltViewModel()
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val totalInDataset = uiState.resultCount
+    val outcomeCounts = uiState.outcomeCounts
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Search Notifications") },
+                title = { Text("Notifications") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
+                )
             )
         }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            OutlinedTextField(
-                value = uiState.query,
-                onValueChange = { viewModel.updateQuery(it) },
-                placeholder = { Text("Search by keyword...") },
-                singleLine = true,
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+        ) {
+            // Search field — prominent, rounded
+            Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp, vertical = 8.dp),
-                trailingIcon = {
-                    if (uiState.query.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.updateQuery("") }) {
-                            Icon(Icons.Default.Clear, "Clear")
-                        }
-                    }
-                }
-            )
-
-            // Filter chips
-            FlowRow(
-                modifier = Modifier.padding(horizontal = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
             ) {
+                OutlinedTextField(
+                    value = uiState.query,
+                    onValueChange = { viewModel.updateQuery(it) },
+                    placeholder = {
+                        Text(
+                            "Search by app, title, or text…",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                        )
+                    },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Search,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    },
+                    trailingIcon = {
+                        if (uiState.query.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.updateQuery("") }) {
+                                Icon(Icons.Default.Clear, contentDescription = "Clear search")
+                            }
+                        }
+                    },
+                    shape = RoundedCornerShape(16.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedBorderColor = androidx.compose.ui.graphics.Color.Transparent,
+                        focusedContainerColor = androidx.compose.ui.graphics.Color.Transparent,
+                        unfocusedContainerColor = androidx.compose.ui.graphics.Color.Transparent
+                    )
+                )
+            }
+
+            // Filter chips with counts
+            FlowRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val allCount = totalInDataset
                 FilterChip(
                     selected = uiState.outcomeFilter == null,
                     onClick = { viewModel.setOutcomeFilter(null) },
-                    label = { Text("All") }
+                    label = {
+                        Text(
+                            if (allCount > 0) "All ($allCount)" else "All",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                    }
                 )
                 NotificationOutcome.entries.forEach { outcome ->
+                    val count = outcomeCounts[outcome.name] ?: 0
                     FilterChip(
                         selected = uiState.outcomeFilter == outcome.name,
                         onClick = {
@@ -96,82 +151,148 @@ fun SearchScreen(
                                 if (uiState.outcomeFilter == outcome.name) null else outcome.name
                             )
                         },
-                        label = { Text(outcome.name.lowercase().replaceFirstChar { it.uppercase() }) }
+                        label = {
+                            Text(
+                                outcomeLabel(outcome) + if (count > 0) " ($count)" else "",
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
                     )
                 }
             }
 
-            // Result count
-            if (uiState.query.isNotBlank() && !uiState.isSearching) {
+            // Section title + result count
+            if (!uiState.isSearching) {
                 Text(
-                    "${uiState.resultCount} result${if (uiState.resultCount != 1) "s" else ""}",
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    text = when {
+                        uiState.isBrowseMode -> "Recent"
+                        else -> "Results"
+                    } + if (totalInDataset > 0) " · ${uiState.results.size} shown" else "",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
 
-            if (uiState.isSearching) {
-                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+            when {
+                uiState.isSearching -> {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(32.dp),
+                            strokeWidth = 2.dp
+                        )
+                    }
                 }
-            }
 
-            if (uiState.query.isBlank() && !uiState.isSearching) {
-                Box(
-                    Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.Search,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "Search your notifications",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+                uiState.results.isEmpty() && uiState.isBrowseMode -> {
+                    // No notifications at all
+                    EmptyStateBrowse(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
                 }
-            } else if (uiState.results.isEmpty() && uiState.query.isNotBlank() && !uiState.isSearching) {
-                Box(
-                    Modifier.fillMaxWidth().weight(1f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(
-                            Icons.Default.SearchOff,
-                            contentDescription = null,
-                            modifier = Modifier.size(48.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        Text(
-                            "No results found for \"${uiState.query}\"",
-                            style = MaterialTheme.typography.bodyLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center
-                        )
-                    }
+
+                uiState.results.isEmpty() && !uiState.isBrowseMode -> {
+                    // Search returned nothing
+                    EmptyStateNoResults(
+                        query = uiState.query,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                    )
                 }
-            } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(uiState.results) { record ->
-                        NotificationCard(
-                            record = record,
-                            onClick = { onNavigateToDetail(record.id) }
-                        )
+
+                else -> {
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(
+                            items = uiState.results,
+                            key = { it.id }
+                        ) { record ->
+                            NotificationCard(
+                                record = record,
+                                onClick = { onNavigateToDetail(record.id) },
+                                modifier = Modifier.animateItem()
+                            )
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+private fun outcomeLabel(outcome: NotificationOutcome): String =
+    when (outcome) {
+        NotificationOutcome.ALLOWED -> "Allowed"
+        NotificationOutcome.SUPPRESSED -> "Suppressed"
+        NotificationOutcome.BUNDLED -> "Bundled"
+    }
+
+@Composable
+private fun EmptyStateBrowse(modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.History,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "No notifications yet",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "When focus mode is on, notifications will appear here. Use the search bar to find them later.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
+    }
+}
+
+@Composable
+private fun EmptyStateNoResults(query: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier = modifier.padding(32.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Icon(
+            Icons.Default.SearchOff,
+            contentDescription = null,
+            modifier = Modifier.size(64.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
+        )
+        Spacer(Modifier.height(16.dp))
+        Text(
+            "No results for \"$query\"",
+            style = MaterialTheme.typography.titleMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Spacer(Modifier.height(8.dp))
+        Text(
+            "Try different keywords or clear the search. You can also change the filter above.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center
+        )
     }
 }

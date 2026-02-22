@@ -7,5 +7,10 @@ data class SearchUiState(
     val results: List<NotificationRecordEntity> = emptyList(),
     val isSearching: Boolean = false,
     val outcomeFilter: String? = null,
-    val resultCount: Int = 0
+    /** Total number of items in current dataset (before outcome filter). */
+    val resultCount: Int = 0,
+    /** Count per outcome for the current dataset (search or recent). Keys = NotificationOutcome.name. */
+    val outcomeCounts: Map<String, Int> = emptyMap(),
+    /** True when showing recent list (no query); false when showing search results. */
+    val isBrowseMode: Boolean = true
 )

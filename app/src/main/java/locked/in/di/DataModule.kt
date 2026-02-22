@@ -37,6 +37,12 @@ object DataModule {
         }
     }
 
+    private val MIGRATION_3_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("UPDATE notification_records SET outcome = 'ALLOWED' WHERE outcome = 'PASSED_THROUGH'")
+        }
+    }
+
     @Provides
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase {
@@ -44,7 +50,7 @@ object DataModule {
             context,
             AppDatabase::class.java,
             AppDatabase.DATABASE_NAME
-        ).addMigrations(MIGRATION_2_3).fallbackToDestructiveMigration().build()
+        ).addMigrations(MIGRATION_2_3, MIGRATION_3_4).fallbackToDestructiveMigration().build()
     }
 
     @Provides

@@ -38,8 +38,7 @@ class DigestViewModel @Inject constructor(
     private val digestOutcomes = listOf(
         NotificationOutcome.SUPPRESSED.name,
         NotificationOutcome.BUNDLED.name,
-        NotificationOutcome.ALLOWED.name,
-        NotificationOutcome.PASSED_THROUGH.name
+        NotificationOutcome.ALLOWED.name
     )
 
     init {
@@ -55,7 +54,7 @@ class DigestViewModel @Inject constructor(
                         totalCount = records.size,
                         suppressedCount = records.count { it.outcome == NotificationOutcome.SUPPRESSED.name },
                         bundledCount = records.count { it.outcome == NotificationOutcome.BUNDLED.name },
-                        allowedCount = records.count { it.outcome == NotificationOutcome.ALLOWED.name || it.outcome == NotificationOutcome.PASSED_THROUGH.name },
+                        allowedCount = records.count { it.outcome == NotificationOutcome.ALLOWED.name },
                         isLoading = false
                     )
                 }

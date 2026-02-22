@@ -7,6 +7,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
+import locked.`in`.data.local.DatabaseReset
 import locked.`in`.data.repository.FocusModeRepository
 import locked.`in`.data.repository.SettingsRepository
 import locked.`in`.domain.model.FocusMode
@@ -18,7 +19,8 @@ import javax.inject.Inject
 class HomeViewModel @Inject constructor(
     private val focusModeRepository: FocusModeRepository,
     private val settingsRepository: SettingsRepository,
-    private val focusModeController: FocusModeController
+    private val focusModeController: FocusModeController,
+    private val databaseReset: DatabaseReset
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
@@ -61,6 +63,16 @@ class HomeViewModel @Inject constructor(
                     priorityThreshold = 5.0f
                 )
             )
+        }
+    }
+
+    /** Temporary: clears Room tables and resets settings (active mode, overrides, timer times). */
+    fun clearAllData() {
+        viewModelScope.launch {
+            databaseReset.clearAllTables()
+            settingsRepository.setActiveFocusModeId(null)
+            settingsRepository.setScheduleOverrideModeIds(emptySet())
+            settingsRepository.clearAllTimerEndTimes()
         }
     }
 }

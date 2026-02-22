@@ -21,6 +21,9 @@ interface NotificationRecordDao {
     @Query("SELECT * FROM notification_records ORDER BY timestamp DESC")
     fun observeAll(): Flow<List<NotificationRecordEntity>>
 
+    @Query("SELECT * FROM notification_records ORDER BY timestamp DESC LIMIT :limit")
+    suspend fun getRecent(limit: Int): List<NotificationRecordEntity>
+
     @Query("SELECT * FROM notification_records WHERE id = :id")
     suspend fun getById(id: String): NotificationRecordEntity?
 
@@ -40,12 +43,13 @@ interface NotificationRecordDao {
     fun observeForDigest(since: Long, outcomes: List<String>): Flow<List<NotificationRecordEntity>>
 
     @Query("""
-        SELECT notification_records.* FROM notification_records
-        JOIN notification_records_fts ON notification_records.rowid = notification_records_fts.rowid
-        WHERE notification_records_fts MATCH :query
-        ORDER BY notification_records.timestamp DESC
+        SELECT * FROM notification_records
+        WHERE (title LIKE :pattern ESCAPE '\' COLLATE NOCASE OR text LIKE :pattern ESCAPE '\' COLLATE NOCASE
+            OR rawPrompt LIKE :pattern ESCAPE '\' COLLATE NOCASE OR appLabel LIKE :pattern ESCAPE '\' COLLATE NOCASE
+            OR packageName LIKE :pattern ESCAPE '\' COLLATE NOCASE)
+        ORDER BY timestamp DESC
     """)
-    suspend fun search(query: String): List<NotificationRecordEntity>
+    suspend fun searchByPattern(pattern: String): List<NotificationRecordEntity>
 
     @Query("SELECT COUNT(*) FROM notification_records WHERE timestamp >= :since")
     suspend fun countSince(since: Long): Int

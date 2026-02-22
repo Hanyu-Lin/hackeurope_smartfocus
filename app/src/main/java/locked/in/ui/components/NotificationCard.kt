@@ -41,13 +41,13 @@ fun NotificationCard(
 ) {
     val timeFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
     val outcomeColor = when (record.outcome) {
-        NotificationOutcome.ALLOWED.name, NotificationOutcome.PASSED_THROUGH.name -> MaterialTheme.colorScheme.tertiary
+        NotificationOutcome.ALLOWED.name -> MaterialTheme.colorScheme.tertiary
         NotificationOutcome.SUPPRESSED.name -> MaterialTheme.colorScheme.error
         NotificationOutcome.BUNDLED.name -> MaterialTheme.colorScheme.secondary
         else -> MaterialTheme.colorScheme.onSurfaceVariant
     }
     val outcomeLabel = when (record.outcome) {
-        NotificationOutcome.ALLOWED.name, NotificationOutcome.PASSED_THROUGH.name -> "Allowed"
+        NotificationOutcome.ALLOWED.name -> "Allowed"
         NotificationOutcome.SUPPRESSED.name -> "Suppressed"
         NotificationOutcome.BUNDLED.name -> "Bundled"
         else -> record.outcome

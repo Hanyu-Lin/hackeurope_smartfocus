@@ -10,12 +10,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.DeleteSweep
 import androidx.compose.material.icons.filled.Summarize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -55,6 +57,7 @@ fun HomeScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showCreateDialog by remember { mutableStateOf(false) }
     var newModeName by remember { mutableStateOf("") }
+    var showClearDataConfirm by remember { mutableStateOf(false) }
 
     if (showCreateDialog) {
         AlertDialog(
@@ -85,6 +88,25 @@ fun HomeScreen(
                     showCreateDialog = false
                     newModeName = ""
                 }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (showClearDataConfirm) {
+        AlertDialog(
+            onDismissRequest = { showClearDataConfirm = false },
+            title = { Text("Clear all data?") },
+            text = { Text("This will delete all focus modes, rules, and notification history. Settings will be reset. This cannot be undone.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.clearAllData()
+                        showClearDataConfirm = false
+                    }
+                ) { Text("Clear", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearDataConfirm = false }) { Text("Cancel") }
             }
         )
     }
@@ -195,7 +217,28 @@ fun HomeScreen(
                         }
                     }
 
-                    item { Spacer(Modifier.height(8.dp)) }
+                    // Temporary: clear data button (remove before release)
+                    item {
+                        Spacer(Modifier.height(16.dp))
+                        TextButton(
+                            onClick = { showClearDataConfirm = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(
+                                Icons.Default.DeleteSweep,
+                                contentDescription = null,
+                                modifier = Modifier.size(18.dp),
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                "Clear all data (dev)",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.labelMedium
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                    }
                 }
             }
         }

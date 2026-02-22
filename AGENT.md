@@ -39,7 +39,7 @@ Notification arrives (NotificationListenerService)
 └────────┬────────────┘
          │ No active mode
          │   → sbn passes through untouched (do NOT cancel)
-         │   → Persist NotificationRecord (outcome = PASSED_THROUGH)
+         │   → Persist NotificationRecord (outcome = ALLOWED)
          │
          │ Active mode
          ▼
@@ -234,7 +234,7 @@ data class NotificationRecord(
     val bundleId: String?                  // non-null when outcome = BUNDLED; FK to NotificationBundle
 )
 
-enum class NotificationOutcome { ALLOWED, SUPPRESSED, BUNDLED, PASSED_THROUGH }
+enum class NotificationOutcome { ALLOWED, SUPPRESSED, BUNDLED }
 ```
 
 ---
@@ -851,7 +851,7 @@ Call `NotificationManagerCompat.notify(bundle.postedNotificationId, notification
 
 All intercepted notifications are persisted to Room with FTS4 indexing, regardless of allow/suppress/bundle outcome.
 
-Full-text search runs on `title`, `text`, and `rawPrompt` via Room FTS4. Attribute filters: app, outcome (ALLOWED / SUPPRESSED / BUNDLED / PASSED_THROUGH), date range, priority score, `bundleId` (to view all notifications in a given bundle). Sort by timestamp (default) or priorityScore.
+Full-text search runs on `title`, `text`, and `rawPrompt` via Room FTS4. Attribute filters: app, outcome (ALLOWED / SUPPRESSED / BUNDLED), date range, priority score, `bundleId` (to view all notifications in a given bundle). Sort by timestamp (default) or priorityScore.
 
 Default retention: 30 days (configurable in Settings). CSV export of audit log available in Settings.
 
